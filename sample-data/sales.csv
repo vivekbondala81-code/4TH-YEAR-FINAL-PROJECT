@@ -1,0 +1,101 @@
+Order_ID,Date,Region,Product,Category,Sales,Quantity,Discount,Profit,Customer_Age,Customer_Segment
+ORD001,2023-01-15,North,Product A,Electronics,12500,5,0.1,2500,35,Corporate
+ORD002,2023-01-16,South,Product B,Furniture,8900,3,0.15,1200,42,Consumer
+ORD003,2023-01-17,East,Product C,Electronics,15600,8,0.05,3100,28,Corporate
+ORD004,2023-01-18,West,Product D,Office,6700,4,0.2,800,31,Consumer
+ORD005,2023-01-19,North,Product A,Electronics,13200,5,0.1,2700,39,Corporate
+ORD006,2023-01-20,South,Product E,Furniture,9800,3,0.12,1500,45,Home Office
+ORD007,2023-01-21,East,Product C,Electronics,14800,7,0.08,2900,32,Corporate
+ORD008,2023-01-22,West,Product F,Office,7200,4,0.18,950,29,Consumer
+ORD009,2023-01-23,North,Product B,Furniture,9200,3,0.14,1300,37,Home Office
+ORD010,2023-01-24,South,Product A,Electronics,11800,5,0.11,2300,41,Corporate
+ORD011,2023-01-25,East,Product D,Office,6500,4,0.19,750,33,Consumer
+ORD012,2023-01-26,West,Product C,Electronics,15200,8,0.06,3000,30,Corporate
+ORD013,2023-01-27,North,Product E,Furniture,9500,3,0.13,1400,36,Home Office
+ORD014,2023-01-28,South,Product F,Office,7100,4,0.17,900,44,Consumer
+ORD015,2023-01-29,East,Product A,Electronics,12900,5,0.1,2600,27,Corporate
+ORD016,2023-01-30,West,Product B,Furniture,8700,3,0.16,1100,34,Consumer
+ORD017,2023-02-01,North,Product C,Electronics,15400,8,0.04,3050,38,Corporate
+ORD018,2023-02-02,South,Product D,Office,6600,4,0.21,850,43,Consumer
+ORD019,2023-02-03,East,Product E,Furniture,9600,3,0.11,1450,31,Home Office
+ORD020,2023-02-04,West,Product A,Electronics,12100,5,0.12,2400,29,Corporate
+ORD021,2023-02-05,North,Product F,Office,7300,4,0.16,980,40,Consumer
+ORD022,2023-02-06,South,Product C,Electronics,14900,7,0.09,2950,46,Corporate
+ORD023,2023-02-07,East,Product B,Furniture,9100,3,0.15,1250,35,Home Office
+ORD024,2023-02-08,West,Product D,Office,6800,4,0.2,880,32,Consumer
+ORD025,2023-02-09,North,Product A,Electronics,12600,5,0.1,2550,37,Corporate
+ORD026,2023-02-10,South,Product E,Furniture,9700,3,0.12,1480,42,Home Office
+ORD027,2023-02-11,East,Product C,Electronics,15700,8,0.05,3150,28,Corporate
+ORD028,2023-02-12,West,Product F,Office,7400,4,0.17,970,30,Consumer
+ORD029,2023-02-13,North,Product B,Furniture,9300,3,0.14,1350,39,Home Office
+ORD030,2023-02-14,South,Product A,Electronics,11900,5,0.11,2350,44,Corporate
+ORD031,2023-02-15,East,Product D,Office,6400,4,0.22,740,33,Consumer
+ORD032,2023-02-16,West,Product C,Electronics,15300,8,0.06,3050,31,Corporate
+ORD033,2023-02-17,North,Product E,Furniture,9400,3,0.13,1420,36,Home Office
+ORD034,2023-02-18,South,Product F,Office,7000,4,0.18,890,45,Consumer
+ORD035,2023-02-19,East,Product A,Electronics,13000,5,0.1,2650,27,Corporate
+ORD036,2023-02-20,West,Product B,Furniture,8600,3,0.17,1050,34,Consumer
+ORD037,2023-03-01,North,Product C,Electronics,15500,8,0.04,3080,38,Corporate
+ORD038,2023-03-02,South,Product D,Office,6500,4,0.23,830,43,Consumer
+ORD039,2023-03-03,East,Product E,Furniture,9500,3,0.12,1430,31,Home Office
+ORD040,2023-03-04,West,Product A,Electronics,12000,5,0.13,2380,29,Corporate
+ORD041,2023-03-05,North,Product F,Office,7200,4,0.17,960,40,Consumer
+ORD042,2023-03-06,South,Product C,Electronics,14800,7,0.1,2930,46,Corporate
+ORD043,2023-03-07,East,Product B,Furniture,9000,3,0.16,1200,35,Home Office
+ORD044,2023-03-08,West,Product D,Office,6700,4,0.21,870,32,Consumer
+ORD045,2023-03-09,North,Product A,Electronics,12500,5,0.11,2530,37,Corporate
+ORD046,2023-03-10,South,Product E,Furniture,9600,3,0.13,1470,42,Home Office
+ORD047,2023-03-11,East,Product C,Electronics,15600,8,0.05,3120,28,Corporate
+ORD048,2023-03-12,West,Product F,Office,7300,4,0.18,960,30,Consumer
+ORD049,2023-03-13,North,Product B,Furniture,9200,3,0.15,1320,39,Home Office
+ORD050,2023-03-14,South,Product A,Electronics,11700,5,0.12,2320,44,Corporate
+ORD051,2023-04-01,East,Product D,Office,6300,4,0.24,720,33,Consumer
+ORD052,2023-04-02,West,Product C,Electronics,15200,8,0.07,3020,31,Corporate
+ORD053,2023-04-03,North,Product E,Furniture,9300,3,0.14,1410,36,Home Office
+ORD054,2023-04-04,South,Product F,Office,6900,4,0.19,880,45,Consumer
+ORD055,2023-04-05,East,Product A,Electronics,12800,5,0.11,2620,27,Corporate
+ORD056,2023-04-06,West,Product B,Furniture,8500,3,0.18,1000,34,Consumer
+ORD057,2023-04-07,North,Product C,Electronics,15400,8,0.05,3060,38,Corporate
+ORD058,2023-04-08,South,Product D,Office,6400,4,0.22,810,43,Consumer
+ORD059,2023-04-09,East,Product E,Furniture,9400,3,0.13,1420,31,Home Office
+ORD060,2023-04-10,West,Product A,Electronics,11900,5,0.14,2360,29,Corporate
+ORD061,2023-04-11,North,Product F,Office,7100,4,0.18,940,40,Consumer
+ORD062,2023-04-12,South,Product C,Electronics,14700,7,0.11,2910,46,Corporate
+ORD063,2023-04-13,East,Product B,Furniture,8900,3,0.17,1150,35,Home Office
+ORD064,2023-04-14,West,Product D,Office,6600,4,0.2,860,32,Consumer
+ORD065,2023-04-15,North,Product A,Electronics,12400,5,0.12,2510,37,Corporate
+ORD066,2023-04-16,South,Product E,Furniture,9500,3,0.14,1460,42,Home Office
+ORD067,2023-04-17,East,Product C,Electronics,15500,8,0.06,3110,28,Corporate
+ORD068,2023-04-18,West,Product F,Office,7200,4,0.19,950,30,Consumer
+ORD069,2023-04-19,North,Product B,Furniture,9100,3,0.16,1310,39,Home Office
+ORD070,2023-04-20,South,Product A,Electronics,11600,5,0.13,2310,44,Corporate
+ORD071,2023-05-01,East,Product D,Office,6200,4,0.25,700,33,Consumer
+ORD072,2023-05-02,West,Product C,Electronics,15100,8,0.08,3010,31,Corporate
+ORD073,2023-05-03,North,Product E,Furniture,9200,3,0.15,1400,36,Home Office
+ORD074,2023-05-04,South,Product F,Office,6800,4,0.2,870,45,Consumer
+ORD075,2023-05-05,East,Product A,Electronics,12700,5,0.12,2610,27,Corporate
+ORD076,2023-05-06,West,Product B,Furniture,8400,3,0.19,950,34,Consumer
+ORD077,2023-05-07,North,Product C,Electronics,15300,8,0.06,3050,38,Corporate
+ORD078,2023-05-08,South,Product D,Office,6300,4,0.23,800,43,Consumer
+ORD079,2023-05-09,East,Product E,Furniture,9300,3,0.14,1410,31,Home Office
+ORD080,2023-05-10,West,Product A,Electronics,11800,5,0.15,2350,29,Corporate
+ORD081,2023-05-11,North,Product F,Office,7000,4,0.19,920,40,Consumer
+ORD082,2023-05-12,South,Product C,Electronics,14600,7,0.12,2900,46,Corporate
+ORD083,2023-05-13,East,Product B,Furniture,8800,3,0.18,1100,35,Home Office
+ORD084,2023-05-14,West,Product D,Office,6500,4,0.21,850,32,Consumer
+ORD085,2023-05-15,North,Product A,Electronics,12300,5,0.13,2500,37,Corporate
+ORD086,2023-05-16,South,Product E,Furniture,9400,3,0.15,1450,42,Home Office
+ORD087,2023-05-17,East,Product C,Electronics,15400,8,0.07,3100,28,Corporate
+ORD088,2023-05-18,West,Product F,Office,7100,4,0.2,940,30,Consumer
+ORD089,2023-05-19,North,Product B,Furniture,9000,3,0.17,1300,39,Home Office
+ORD090,2023-05-20,South,Product A,Electronics,11500,5,0.14,2300,44,Corporate
+ORD091,2023-06-01,East,Product D,Office,6100,4,0.26,680,33,Consumer
+ORD092,2023-06-02,West,Product C,Electronics,15000,8,0.09,3000,31,Corporate
+ORD093,2023-06-03,North,Product E,Furniture,9100,3,0.16,1390,36,Home Office
+ORD094,2023-06-04,South,Product F,Office,6700,4,0.21,860,45,Consumer
+ORD095,2023-06-05,East,Product A,Electronics,12600,5,0.13,2600,27,Corporate
+ORD096,2023-06-06,West,Product B,Furniture,8300,3,0.2,900,34,Consumer
+ORD097,2023-06-07,North,Product C,Electronics,15200,8,0.07,3040,38,Corporate
+ORD098,2023-06-08,South,Product D,Office,6200,4,0.24,790,43,Consumer
+ORD099,2023-06-09,East,Product E,Furniture,9200,3,0.15,1400,31,Home Office
+ORD100,2023-06-10,West,Product A,Electronics,11700,5,0.16,2340,29,Corporate
