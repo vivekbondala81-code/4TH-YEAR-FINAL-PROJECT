@@ -3,9 +3,11 @@
 interface AnalysisProgressProps {
   analysisPlan: any
   hypotheses: any[]
+  websocketMessages?: any[]
+  isConnected?: boolean
 }
 
-export default function AnalysisProgress({ analysisPlan, hypotheses }: AnalysisProgressProps) {
+export default function AnalysisProgress({ analysisPlan, hypotheses, websocketMessages = [], isConnected = false }: AnalysisProgressProps) {
   const steps = [
     'Dataset Profiling',
     'Data Quality Analysis',
@@ -16,27 +18,67 @@ export default function AnalysisProgress({ analysisPlan, hypotheses }: AnalysisP
     'Final Report'
   ]
 
+  // Determine step status based on WebSocket messages
+  const getStepStatus = (stepIndex: number) => {
+    const relevantMessages = websocketMessages.filter((m: any) => m.type === 'progress')
+    
+    if (relevantMessages.length > stepIndex) {
+      return 'completed'
+    } else if (relevantMessages.length === stepIndex && isConnected) {
+      return 'running'
+    }
+    return 'pending'
+  }
+
   return (
     <div className="max-w-4xl mx-auto">
       <div className="bg-white rounded-lg shadow-md p-6">
-        <h2 className="text-2xl font-bold mb-6">Analysis Progress</h2>
+        <div className="flex items-center justify-between mb-6">
+          <h2 className="text-2xl font-bold">Analysis Progress</h2>
+          {isConnected && (
+            <span className="flex items-center gap-2 text-green-600">
+              <span className="w-3 h-3 bg-green-600 rounded-full animate-pulse"></span>
+              Live
+            </span>
+          )}
+        </div>
         
         <div className="space-y-4">
-          {steps.map((step, index) => (
-            <div key={step} className="flex items-center gap-4">
-              <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
-                index < 4 ? 'bg-green-600 text-white' : 
-                index === 4 ? 'bg-blue-600 text-white animate-pulse' : 
-                'bg-gray-300 text-gray-600'
-              }`}>
-                {index < 4 ? '✓' : index === 4 ? '●' : '○'}
+          {steps.map((step, index) => {
+            const status = getStepStatus(index)
+            return (
+              <div key={step} className="flex items-center gap-4">
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
+                  status === 'completed' ? 'bg-green-600 text-white' : 
+                  status === 'running' ? 'bg-blue-600 text-white animate-pulse' : 
+                  'bg-gray-300 text-gray-600'
+                }`}>
+                  {status === 'completed' ? '✓' : status === 'running' ? '●' : '○'}
+                </div>
+                <span className={status === 'completed' ? 'text-green-600' : status === 'running' ? 'text-blue-600' : 'text-gray-600'}>
+                  {step}
+                </span>
+                {status === 'running' && (
+                  <span className="text-sm text-gray-500 ml-2">Processing...</span>
+                )}
               </div>
-              <span className={index < 4 ? 'text-green-600' : 'text-gray-600'}>
-                {step}
-              </span>
-            </div>
-          ))}
+            )
+          })}
         </div>
+
+        {/* Show real-time messages */}
+        {websocketMessages.length > 0 && (
+          <div className="mt-6 border-t pt-4">
+            <h3 className="text-lg font-semibold mb-2">Real-time Updates</h3>
+            <div className="space-y-2 max-h-40 overflow-y-auto">
+              {websocketMessages.slice(-5).map((msg: any, i: number) => (
+                <div key={i} className="text-sm bg-gray-50 p-2 rounded">
+                  <span className="font-semibold">{msg.type}:</span> {msg.step || msg.message}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {analysisPlan && (
           <div className="mt-8 border-t pt-6">

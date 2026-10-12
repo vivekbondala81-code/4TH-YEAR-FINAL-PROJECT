@@ -1,12 +1,16 @@
 from typing import Dict, Any, List
 from datetime import datetime
+from .llm_service import LLMService
 
 class ReportGenerator:
-    """Generates the final analytical report"""
+    """Generates the final analytical report with LLM interpretation"""
     
-    def __init__(self, session_state: Dict[str, Any], evidence_store):
+    def __init__(self, session_state: Dict[str, Any], evidence_store, use_llm: bool = True):
         self.session_state = session_state
         self.evidence_store = evidence_store
+        self.use_llm = use_llm
+        self.llm_service = LLMService() if use_llm else None
+        self.llm_insights = None
         self.report = {}
         
     def generate(self) -> Dict[str, Any]:
@@ -90,10 +94,11 @@ class ReportGenerator:
         return hypotheses
     
     def _generate_key_findings(self) -> List[Dict[str, Any]]:
-        """Generate key findings from execution results"""
+        """Generate key findings from execution results with LLM interpretation"""
         execution_results = self.session_state.get("execution_results", [])
         findings = []
         
+        # Basic findings from execution results
         for result in execution_results:
             if result.get("status") == "completed":
                 finding = {
@@ -102,6 +107,27 @@ class ReportGenerator:
                     "result": result.get("result")
                 }
                 findings.append(finding)
+        
+        # Use LLM to interpret results if available
+        if self.use_llm and self.llm_service:
+            try:
+                goal = self.session_state.get("goal", "")
+                interpretation = self.llm_service.interpret_results(execution_results, goal)
+                
+                # Add LLM-generated insights
+                if interpretation.get("key_findings"):
+                    for finding in interpretation["key_findings"]:
+                        findings.append({
+                            "source": "LLM_Interpretation",
+                            "description": finding,
+                            "result": None
+                        })
+                
+                # Store LLM insights for later use
+                self.llm_insights = interpretation
+            except Exception as e:
+                print(f"LLM interpretation failed: {e}")
+                self.llm_insights = None
         
         return findings
     
@@ -172,8 +198,12 @@ class ReportGenerator:
         }
     
     def _generate_recommendations(self) -> List[str]:
-        """Generate recommendations based on findings"""
+        """Generate recommendations based on findings with LLM insights"""
         recommendations = []
+        
+        # Use LLM recommendations if available
+        if self.use_llm and self.llm_insights and self.llm_insights.get("recommendations"):
+            recommendations.extend(self.llm_insights["recommendations"])
         
         # Generate recommendations based on verification
         verification_results = self.session_state.get("verification_results", {})
@@ -187,7 +217,8 @@ class ReportGenerator:
         if dataset_info:
             quality_report = dataset_info.get("quality_report", {})
             for rec in quality_report.get("recommendations", []):
-                recommendations.append(rec)
+                if rec not in recommendations:
+                    recommendations.append(rec)
         
         if not recommendations:
             recommendations.append("Proceed with findings based on the analysis results")

@@ -44,6 +44,8 @@ User → Next.js Dashboard → FastAPI Backend → Analysis Pipeline
 - Plotly (Visualization)
 - SQLAlchemy (Database operations)
 - WebSockets (Real-time updates)
+- **Google Gemini AI** (LLM-powered analysis planning and interpretation)
+- **LangGraph** (Agentic workflow orchestration)
 
 ### Frontend
 - Next.js 14 (React framework)
@@ -59,33 +61,35 @@ User → Next.js Dashboard → FastAPI Backend → Analysis Pipeline
 - Node.js 18+
 - Git
 
-### Backend Setup
+### Quick Start (Windows)
+
+```bash
+# 1. Set up API keys (required for AI features)
+# Copy backend/.env.example to backend/.env
+# Add your Gemini API keys to backend/.env
+
+# 2. Terminal 1 - Start Backend
+start-backend.bat
+
+# 3. Terminal 2 - Start Frontend
+start-frontend.bat
+```
+
+### Manual Setup
+
+#### Backend Setup
 
 ```bash
 cd backend
 pip install -r requirements.txt
+python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-### Frontend Setup
+#### Frontend Setup
 
 ```bash
 cd frontend
 npm install
-```
-
-## Running the Application
-
-### Start Backend
-
-```bash
-cd backend
-python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000
-```
-
-### Start Frontend
-
-```bash
-cd frontend
 npm run dev
 ```
 
@@ -157,6 +161,13 @@ A sample sales dataset is provided in `sample-data/sales.csv` for testing.
 
 ## Key Features Explained
 
+### AI-Powered Analysis with Gemini
+- **LLM-Driven Planning**: Uses Google Gemini AI to generate intelligent analysis plans based on natural language goals
+- **Smart Hypothesis Generation**: AI generates multiple testable hypotheses automatically
+- **Intelligent Tool Selection**: LLM selects the best tools for each hypothesis
+- **Result Interpretation**: AI interprets statistical results and provides actionable insights
+- **Natural Language Understanding**: Users can describe goals in plain English
+
 ### Hypothesis-Driven Analysis
 Unlike simple AI analytics, this system generates multiple hypotheses and tests each one independently, avoiding premature conclusions.
 
@@ -168,6 +179,9 @@ Results are cross-checked using alternative methods, statistical validation, and
 
 ### Revision Loop
 If verification fails, the system automatically revises the analysis and re-executes.
+
+### Real-Time Progress
+WebSocket connections provide live updates of analysis progress to the dashboard.
 
 ## License
 

@@ -1,16 +1,27 @@
 from typing import Dict, Any, List
 import re
+from .llm_service import LLMService
 
 class AnalysisPlanner:
-    """Creates structured analysis plans from natural language goals"""
+    """Creates structured analysis plans from natural language goals using LLM"""
     
-    def __init__(self, goal: str, dataset_info: Dict[str, Any]):
+    def __init__(self, goal: str, dataset_info: Dict[str, Any], use_llm: bool = True):
         self.goal = goal
         self.dataset_info = dataset_info
+        self.use_llm = use_llm
+        self.llm_service = LLMService() if use_llm else None
         self.plan = {}
         
     def create_plan(self) -> Dict[str, Any]:
-        """Generate detailed analysis plan"""
+        """Generate detailed analysis plan using LLM or rule-based approach"""
+        if self.use_llm and self.llm_service:
+            try:
+                self.plan = self.llm_service.generate_analysis_plan(self.goal, self.dataset_info)
+                return self.plan
+            except Exception as e:
+                print(f"LLM planning failed, falling back to rule-based: {e}")
+        
+        # Fallback to rule-based planning
         self.plan = {
             "main_goal": self.goal,
             "questions": [],

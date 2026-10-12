@@ -1,16 +1,29 @@
 from typing import Dict, Any, List
+from .llm_service import LLMService
 
 class HypothesisEngine:
-    """Generates and tests multiple hypotheses for analysis"""
+    """Generates and tests multiple hypotheses for analysis using LLM"""
     
-    def __init__(self, goal: str, analysis_plan: Dict[str, Any], dataset_info: Dict[str, Any]):
+    def __init__(self, goal: str, analysis_plan: Dict[str, Any], dataset_info: Dict[str, Any], use_llm: bool = True):
         self.goal = goal
         self.analysis_plan = analysis_plan
         self.dataset_info = dataset_info
+        self.use_llm = use_llm
+        self.llm_service = LLMService() if use_llm else None
         self.hypotheses = []
         
     def generate_hypotheses(self) -> List[Dict[str, Any]]:
-        """Generate multiple hypotheses to explain the observed patterns"""
+        """Generate multiple hypotheses to explain the observed patterns using LLM"""
+        if self.use_llm and self.llm_service:
+            try:
+                self.hypotheses = self.llm_service.generate_hypotheses(
+                    self.goal, self.analysis_plan, self.dataset_info
+                )
+                return self.hypotheses
+            except Exception as e:
+                print(f"LLM hypothesis generation failed, falling back to rule-based: {e}")
+        
+        # Fallback to rule-based generation
         goal_lower = self.goal.lower()
         
         # Get numeric and categorical columns

@@ -8,6 +8,7 @@ import HypothesesView from './HypothesesView'
 import EvidenceView from './EvidenceView'
 import VisualizationsView from './VisualizationsView'
 import ReportView from './ReportView'
+import { useWebSocket } from './useWebSocket'
 
 export default function Dashboard() {
   const [currentView, setCurrentView] = useState<'upload' | 'analyzing' | 'results'>('upload')
@@ -17,6 +18,9 @@ export default function Dashboard() {
   const [hypotheses, setHypotheses] = useState<any[]>([])
   const [executionResults, setExecutionResults] = useState<any[]>([])
   const [report, setReport] = useState<any>(null)
+  
+  // WebSocket for real-time updates
+  const { isConnected, messages } = useWebSocket(sessionId)
 
   const handleUploadComplete = (data: any) => {
     setFileId(data.file_id)
@@ -95,6 +99,8 @@ export default function Dashboard() {
         <AnalysisProgress
           analysisPlan={analysisPlan}
           hypotheses={hypotheses}
+          websocketMessages={messages}
+          isConnected={isConnected}
         />
       )}
 

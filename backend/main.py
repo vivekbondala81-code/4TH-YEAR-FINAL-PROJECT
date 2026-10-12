@@ -116,12 +116,12 @@ async def start_analysis(request: Dict[str, Any]):
         # Get dataset profile
         dataset_info = evidence_store.get_dataset(file_id)
         
-        # Create analysis plan
-        planner = AnalysisPlanner(goal, dataset_info)
+        # Create analysis plan (with LLM)
+        planner = AnalysisPlanner(goal, dataset_info, use_llm=True)
         analysis_plan = planner.create_plan()
         
-        # Generate hypotheses
-        hypothesis_engine = HypothesisEngine(goal, analysis_plan, dataset_info)
+        # Generate hypotheses (with LLM)
+        hypothesis_engine = HypothesisEngine(goal, analysis_plan, dataset_info, use_llm=True)
         hypotheses = hypothesis_engine.generate_hypotheses()
         
         # Store in memory
@@ -155,8 +155,8 @@ async def execute_analysis(request: Dict[str, Any]):
         session_state = analysis_memory.get_session(session_id)
         dataset_info = evidence_store.get_dataset(session_state["file_id"])
         
-        # Execute tools
-        tool_executor = ToolExecutor(dataset_info, session_state, evidence_store)
+        # Execute tools with real-time updates
+        tool_executor = ToolExecutor(dataset_info, session_state, evidence_store, connection_manager)
         execution_results = tool_executor.execute_all()
         
         # Store results
@@ -187,8 +187,8 @@ async def verify_analysis(request: Dict[str, Any]):
         # Get analysis state
         session_state = analysis_memory.get_session(session_id)
         
-        # Verify results
-        verification_engine = VerificationEngine(session_state, evidence_store)
+        # Verify results with LLM interpretation
+        verification_engine = VerificationEngine(session_state, evidence_store, use_llm=True)
         verification_results = verification_engine.verify()
         
         # Store verification results
@@ -231,8 +231,8 @@ async def generate_report(request: Dict[str, Any]):
         # Get complete analysis state
         session_state = analysis_memory.get_session(session_id)
         
-        # Generate report
-        report_generator = ReportGenerator(session_state, evidence_store)
+        # Generate report with LLM interpretation
+        report_generator = ReportGenerator(session_state, evidence_store, use_llm=True)
         report = report_generator.generate()
         
         # Store report

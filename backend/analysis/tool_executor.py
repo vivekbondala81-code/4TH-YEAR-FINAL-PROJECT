@@ -10,12 +10,13 @@ import json
 import os
 
 class ToolExecutor:
-    """Executes analysis tools (Python, SQL, Statistics, ML, Visualization)"""
+    """Executes analysis tools (Python, SQL, Statistics, ML, Visualization) with real-time updates"""
     
-    def __init__(self, dataset_info: Dict[str, Any], session_state: Dict[str, Any], evidence_store):
+    def __init__(self, dataset_info: Dict[str, Any], session_state: Dict[str, Any], evidence_store, connection_manager=None):
         self.dataset_info = dataset_info
         self.session_state = session_state
         self.evidence_store = evidence_store
+        self.connection_manager = connection_manager
         self.df = None
         self.execution_results = []
         
@@ -31,7 +32,7 @@ class ToolExecutor:
             raise ValueError("Dataset file not found")
     
     def execute_all(self) -> List[Dict[str, Any]]:
-        """Execute all analysis steps from the plan"""
+        """Execute all analysis steps from the plan with real-time updates"""
         self._load_dataset()
         
         if self.df is None:
@@ -39,22 +40,52 @@ class ToolExecutor:
         
         analysis_plan = self.session_state.get("analysis_plan", {})
         steps = analysis_plan.get("steps", [])
+        session_id = self.session_state.get("session_id")
         
-        for step in steps:
+        for i, step in enumerate(steps):
+            # Send progress update via WebSocket
+            if self.connection_manager:
+                import asyncio
+                asyncio.create_task(self.connection_manager.send_progress(
+                    session_id,
+                    step["id"],
+                    "running"
+                ))
+            
             result = self._execute_step(step)
             self.execution_results.append(result)
             
             # Store in evidence store
             self.evidence_store.store_tool_execution(
-                self.session_state["session_id"],
+                session_id,
                 step["id"],
                 result
             )
+            
+            # Send completion update
+            if self.connection_manager:
+                asyncio.create_task(self.connection_manager.send_progress(
+                    session_id,
+                    step["id"],
+                    "completed"
+                ))
         
         # Generate visualizations
+        if self.connection_manager:
+            asyncio.create_task(self.connection_manager.send_progress(
+                session_id,
+                "visualization",
+                "running"
+            ))
         self._generate_visualizations()
         
         # Detect anomalies
+        if self.connection_manager:
+            asyncio.create_task(self.connection_manager.send_progress(
+                session_id,
+                "anomaly_detection",
+                "running"
+            ))
         self._detect_anomalies()
         
         return self.execution_results
