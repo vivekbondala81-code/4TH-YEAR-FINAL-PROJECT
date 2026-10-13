@@ -9,7 +9,7 @@ interface WebSocketMessage {
 }
 
 export function useWebSocket(sessionId: string | null) {
-  const [isConnected, setIsConnected] = useState(false)
+  const [isConnected, setIsConnected] = useState<boolean>(false)
   const [messages, setMessages] = useState<WebSocketMessage[]>([])
   const ws = useRef<WebSocket | null>(null)
 
@@ -24,16 +24,16 @@ export function useWebSocket(sessionId: string | null) {
       console.log('WebSocket connected')
     }
 
-    ws.current.onmessage = (event) => {
+    ws.current.onmessage = (event: MessageEvent) => {
       try {
         const message: WebSocketMessage = JSON.parse(event.data)
-        setMessages((prev) => [...prev, message])
-      } catch (error) {
+        setMessages((prev: WebSocketMessage[]) => [...prev, message])
+      } catch (error: unknown) {
         console.error('Failed to parse WebSocket message:', error)
       }
     }
 
-    ws.current.onerror = (error) => {
+    ws.current.onerror = (error: Event) => {
       console.error('WebSocket error:', error)
     }
 

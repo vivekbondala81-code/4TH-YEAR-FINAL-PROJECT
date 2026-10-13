@@ -1,3 +1,6 @@
+import warnings
+warnings.filterwarnings('ignore')
+
 import google.generativeai as genai
 from typing import Dict, Any, List
 import json
@@ -13,8 +16,12 @@ class LLMService:
             print("Warning: No Gemini API key configured. LLM features will be disabled.")
             self.model = None
         else:
-            genai.configure(api_key=api_key)
-            self.model = genai.GenerativeModel('gemini-pro')
+            try:
+                genai.configure(api_key=api_key)
+                self.model = genai.GenerativeModel('gemini-pro')
+            except Exception as e:
+                print(f"Warning: Failed to initialize Gemini model: {e}")
+                self.model = None
         
     def generate_analysis_plan(self, goal: str, dataset_info: Dict[str, Any]) -> Dict[str, Any]:
         """Generate analysis plan using LLM"""
