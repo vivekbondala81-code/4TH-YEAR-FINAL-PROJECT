@@ -10,6 +10,8 @@ class Settings(BaseSettings):
     gemini_api_key_4: str = ""
     gemini_api_key_5: str = ""
     gemini_api_key_6: str = ""
+    gemini_api_key_7: str = ""
+    gemini_api_key_8: str = ""
 
     class Config:
         env_file = ".env"
@@ -28,6 +30,8 @@ def get_gemini_api_keys() -> List[str]:
         settings.gemini_api_key_4,
         settings.gemini_api_key_5,
         settings.gemini_api_key_6,
+        settings.gemini_api_key_7,
+        settings.gemini_api_key_8,
         os.environ.get("GEMINI_API_KEY", ""),
     ]
 

@@ -45,7 +45,18 @@ class ReportGenerator:
         
         summary = f"This analysis investigated: {goal}\n\n"
         
-        if status == "completed":
+        # Check if this was a general question
+        execution_results = self.session_state.get("execution_results", [])
+        general_answer = None
+        for result in execution_results:
+            if result.get("status") == "completed" and result.get("result", {}).get("type") == "general_insight":
+                general_answer = result.get("result", {}).get("answer")
+                break
+        
+        if general_answer:
+            summary += f"Direct Answer:\n{general_answer}\n\n"
+            summary += "Additionally, the dataset was analyzed to provide context for this question."
+        elif status == "completed":
             summary += "The analysis was completed successfully. Key findings are presented below."
         elif status == "verification_failed":
             summary += "The analysis was completed but verification identified some issues. Please review the verification section."
@@ -100,7 +111,21 @@ class ReportGenerator:
         execution_results = self.session_state.get("execution_results", [])
         findings = []
 
-        # Ask the LLM first so its goal-specific conclusions lead the report.
+        # First, check if there's a general question answer and make it prominent
+        general_answer = None
+        for result in execution_results:
+            if result.get("status") == "completed" and result.get("result", {}).get("type") == "general_insight":
+                general_answer = result.get("result", {}).get("answer")
+                if general_answer:
+                    findings.append({
+                        "source": "General Question Answer",
+                        "kind": "general_answer",
+                        "description": general_answer,
+                        "result": None
+                    })
+                    break  # Only add the first general answer
+
+        # Ask the LLM for additional insights
         if self.use_llm and self.llm_service:
             try:
                 goal = self.session_state.get("goal", "")
@@ -118,9 +143,12 @@ class ReportGenerator:
                 print(f"LLM interpretation failed: {e}")
                 self.llm_insights = None
 
-        # Then the traceable evidence-backed findings.
+        # Then the traceable evidence-backed findings (skip if we already have general answer)
         for result in execution_results:
             if result.get("status") == "completed":
+                # Skip the general query step since we already added it
+                if result.get("result", {}).get("type") == "general_insight":
+                    continue
                 findings.append({
                     "source": result.get("step_id"),
                     "kind": "evidence",

@@ -110,6 +110,21 @@ function ResultBody({ data }: { data: any }) {
     )
   }
 
+  if (data.type === 'general_insight' && data.answer) {
+    handled.add('type')
+    handled.add('answer')
+    sections.push(
+      <div key="insight" className="bg-gradient-to-br from-indigo-50 to-blue-50 p-4 rounded-xl border-l-4 border-indigo-500">
+        <h4 className="text-sm font-bold text-indigo-800 mb-2 flex items-center gap-2">
+          <span>💡</span> AI Knowledge Base Answer
+        </h4>
+        <p className="text-gray-800 text-sm whitespace-pre-wrap leading-relaxed">
+          {data.answer}
+        </p>
+      </div>
+    )
+  }
+
   // Descriptive statistics (describe / generic summary): column -> stats map.
   const statsObj = data.statistics || data.summary
   if (statsObj && typeof statsObj === 'object') {

@@ -13,6 +13,12 @@ An AI-powered autonomous data analysis system that performs hypothesis-driven in
 - **Evidence Store**: Complete traceability of all analysis steps
 - **Real-time Dashboard**: Interactive Next.js frontend with live progress updates
 - **Visualization**: Automatic chart generation using Plotly
+- **General Question Answering**: AI-powered answers to general business/analytical questions
+- **Multi-Format Export**: Export datasets and results in CSV, Excel, or JSON formats
+- **Dimension Comparison**: Compare different dimensions in your dataset
+- **Advanced Filtering**: Filter data using various operators (equals, contains, greater than, etc.)
+- **Automatic Type Detection**: Smart conversion of string columns to numeric when appropriate
+- **Universal Data Support**: Works with numeric, categorical, and mixed datasets
 
 ## Architecture
 
@@ -126,6 +132,10 @@ A sample sales dataset is provided in `sample-data/sales.csv` for testing.
 - `POST /verify` - Verify analysis results
 - `POST /report` - Generate final report
 - `GET /session/{session_id}` - Get session state
+- `GET /report/{session_id}/download` - Download report (HTML or JSON)
+- `POST /export` - Export dataset in CSV, Excel, or JSON format
+- `POST /compare` - Compare different dimensions in the dataset
+- `POST /filter` - Filter dataset based on criteria
 - `WS /ws/{session_id}` - WebSocket for real-time updates
 
 ## Project Structure

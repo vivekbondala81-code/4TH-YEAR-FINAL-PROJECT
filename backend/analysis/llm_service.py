@@ -143,9 +143,9 @@ Return a JSON object with:
 EVERY step must be a JSON object with these keys:
 - id: "step_1", "step_2", ...
 - description: what is computed AND why it answers the goal
-- tool: one of "python/pandas", "python/scipy", "python/sklearn", "visualization"
+- tool: one of "python/pandas", "python/scipy", "python/sklearn", "visualization", "knowledge_base"
 - operation: one of "describe", "groupby", "correlation", "time_series",
-  "outlier_detection", "statistical_test", "visualization"
+  "outlier_detection", "statistical_test", "visualization", "general_query"
 - dimension: EXACT categorical column name to group/split by (required for groupby,
   statistical_test and visualization steps)
 - metric: EXACT numeric column name to measure (required for groupby, time_series,
@@ -154,12 +154,12 @@ EVERY step must be a JSON object with these keys:
 - chart_type: "bar", "line", "box", "scatter" or "histogram" (for visualization steps)
 
 Rules:
-- Use ONLY column names exactly as listed above. Never invent column names.
+- If the goal is a general question or requires external knowledge (e.g., "What is a good profit margin?"), use the "knowledge_base" tool with "general_query" operation.
+- Use ONLY column names exactly as listed above for data steps. Never invent column names.
 - Prefer the columns the goal mentions (e.g. a "sales" goal should use the Sales metric).
-- Include at least one groupby step comparing the key metric across the most relevant
-  categorical dimension, one correlation or statistical_test step, and one visualization
-  step that charts the key metric.
-- 5 to 7 steps total.
+- Include at least one knowledge_base step if the goal is broad, one groupby step comparing the key metric across the most relevant categorical dimension, and one visualization step that charts the key metric.
+- 5 to 8 steps total.
+- The "knowledge_base" tool should be used for interpreting the goal in a broader business context or answering "anything" asked.
 
 Return ONLY valid JSON.
 """
@@ -205,9 +205,9 @@ Return ONLY valid JSON.
 
         valid_ops = {
             "describe", "groupby", "correlation", "time_series",
-            "outlier_detection", "statistical_test", "visualization",
+            "outlier_detection", "statistical_test", "visualization", "general_query"
         }
-        valid_tools = {"python/pandas", "python/scipy", "python/sklearn", "visualization"}
+        valid_tools = {"python/pandas", "python/scipy", "python/sklearn", "visualization", "knowledge_base"}
 
         for step in plan.get("steps", []):
             operation = (step.get("operation") or "").strip()
@@ -274,6 +274,28 @@ Return ONLY valid JSON array.
         except Exception as e:
             print(f"LLM Error: {e}")
         return self._fallback_hypotheses(goal, dataset_info)
+
+    def answer_general_question(self, question: str, context: Optional[str] = None) -> str:
+        """Answer a general question using LLM, optionally with context."""
+        if not self.model:
+            return "LLM service unavailable. Cannot answer general questions."
+
+        prompt = f"""
+You are an expert business and data consultant. Answer the following question in a helpful,
+professional manner.
+
+QUESTION: {question}
+"""
+        if context:
+            prompt += f"\nCONTEXT (from dataset/analysis):\n{context}\n"
+
+        prompt += "\nProvide a clear, concise, and insightful answer.\n"
+        
+        try:
+            answer = self._generate(prompt)
+            return answer if answer else "No answer generated."
+        except Exception as e:
+            return f"Error generating answer: {e}"
 
     def interpret_results(self, results: List[Dict[str, Any]], goal: str) -> Dict[str, Any]:
         """Interpret analysis results using LLM"""

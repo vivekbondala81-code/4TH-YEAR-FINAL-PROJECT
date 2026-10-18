@@ -92,6 +92,30 @@ class AnalysisPlanner:
         """Generate specific questions to answer the goal"""
         goal_lower = self.goal.lower()
         
+        # Detect general knowledge questions (require external knowledge)
+        general_keywords = [
+            "what is a", "what are the", "how to", "why is", "why are",
+            "best practices", "good", "optimal", "ideal", "benchmark",
+            "standard", "typical", "average", "normal", "should",
+            "explain", "define", "meaning of", "difference between"
+        ]
+        
+        is_general_question = any(keyword in goal_lower for keyword in general_keywords)
+        
+        # For general questions, add a knowledge-focused question
+        if is_general_question:
+            self.plan["questions"].append({
+                "id": "q1",
+                "question": f"What is the answer to: {self.goal}?",
+                "focus": ["knowledge_base", "external_knowledge"]
+            })
+            self.plan["questions"].append({
+                "id": "q2",
+                "question": "How does this relate to the dataset?",
+                "focus": entities["metrics"] if entities["metrics"] else ["dataset_context"]
+            })
+            return  # Skip other pattern matching for general questions
+        
         # Base questions for analysis
         if "decline" in goal_lower or "decrease" in goal_lower or "drop" in goal_lower:
             self.plan["questions"].append({
@@ -140,6 +164,53 @@ class AnalysisPlanner:
     def _generate_steps(self, entities: Dict[str, List[str]]):
         """Generate executable analysis steps"""
         step_id = 1
+        goal_lower = self.goal.lower()
+        
+        # Detect general knowledge questions
+        general_keywords = [
+            "what is a", "what are the", "how to", "why is", "why are",
+            "best practices", "good", "optimal", "ideal", "benchmark",
+            "standard", "typical", "average", "normal", "should",
+            "explain", "define", "meaning of", "difference between"
+        ]
+        
+        is_general_question = any(keyword in goal_lower for keyword in general_keywords)
+        
+        # For general questions, start with knowledge_base step
+        if is_general_question:
+            self.plan["steps"].append({
+                "id": f"step{step_id}",
+                "description": f"Answer the general question: {self.goal}",
+                "tool": "knowledge_base",
+                "operation": "general_query"
+            })
+            step_id += 1
+            
+            # Then analyze the dataset to provide context
+            self.plan["steps"].append({
+                "id": f"step{step_id}",
+                "description": "Calculate descriptive statistics for the dataset",
+                "tool": "python/pandas",
+                "operation": "describe"
+            })
+            step_id += 1
+            
+            # Add visualization for context
+            if entities["metrics"]:
+                metric = entities["metrics"][0]
+                dimension = entities["dimensions"][0] if entities["dimensions"] else None
+                self.plan["steps"].append({
+                    "id": f"step{step_id}",
+                    "description": f"Visualize {metric} to provide context",
+                    "tool": "visualization",
+                    "operation": "visualization",
+                    "metric": metric,
+                    "dimension": dimension,
+                    "chart_type": "bar" if dimension else "histogram"
+                })
+                step_id += 1
+            
+            return  # Early return for general questions
         
         # Step 1: Descriptive statistics
         self.plan["steps"].append({

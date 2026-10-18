@@ -37,16 +37,25 @@ class DatasetProfiler:
         self._profile = {}
         
     def _load_data(self) -> pd.DataFrame:
-        """Load data from CSV or Excel"""
+        """Load data from CSV or Excel with automatic type conversion"""
         file_extension = self.file_path.split(".")[-1].lower()
-        
+
         if file_extension == "csv":
             self.df = pd.read_csv(self.file_path)
         elif file_extension in ["xlsx", "xls"]:
             self.df = pd.read_excel(self.file_path)
         else:
             raise ValueError(f"Unsupported file format: {file_extension}")
-        
+
+        # Automatic type conversion: try to convert object columns to numeric
+        for col in self.df.columns:
+            if self.df[col].dtype == 'object':
+                # Try to convert to numeric
+                converted = pd.to_numeric(self.df[col], errors='coerce')
+                # If conversion succeeded for at least 50% of non-null values, keep it
+                if converted.notna().sum() / self.df[col].notna().sum() > 0.5 if self.df[col].notna().sum() > 0 else False:
+                    self.df[col] = converted
+
         return self.df
     
     def profile(self) -> Dict[str, Any]:

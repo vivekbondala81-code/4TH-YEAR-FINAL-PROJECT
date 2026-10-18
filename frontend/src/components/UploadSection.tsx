@@ -242,7 +242,7 @@ export default function UploadSection({ onUploadComplete, onAnalysisStart }: Upl
 
       {/* Analysis Goal */}
       {profile && (
-        <div className="glass-card p-6 animate-fade-in">
+        <div className="glass-card p-6">
           <h2 className="text-3xl font-bold text-gray-800 mb-6 gradient-text">Define Analysis Goal</h2>
           
           <div className="mb-4">
@@ -264,7 +264,7 @@ export default function UploadSection({ onUploadComplete, onAnalysisStart }: Upl
             value={goal}
             onChange={(e) => setGoal(e.target.value)}
             placeholder="Describe what you want to analyze in natural language..."
-            className="w-full border-2 border-gray-200 rounded-xl p-4 h-32 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition resize-none"
+            className="w-full border-2 border-gray-200 rounded-xl p-4 h-32 focus:outline-none focus:ring-2 focus:ring-blue-500 transition resize-none text-gray-900 bg-white"
           />
           <button
             onClick={handleStartAnalysis}

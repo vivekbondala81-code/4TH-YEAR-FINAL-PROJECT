@@ -8,6 +8,7 @@ import plotly.express as px
 from typing import Dict, Any, List
 import json
 import os
+from .llm_service import LLMService
 
 
 def _to_native(obj):
@@ -52,6 +53,7 @@ class ToolExecutor:
         self.df = None
         self.execution_results = []
         self.plan_steps: List[Dict[str, Any]] = []
+        self.llm_service = LLMService()
         # (chart_type, dimension, metric) signatures already emitted, so the
         # plan-driven pass never duplicates a chart the plan already asked for.
         self._viz_signatures: set = set()
@@ -144,6 +146,8 @@ class ToolExecutor:
                 result["result"] = self._execute_scipy_operation(operation, step)
             elif tool == "python/sklearn":
                 result["result"] = self._execute_sklearn_operation(operation, step)
+            elif tool == "knowledge_base":
+                result["result"] = self._execute_knowledge_base(operation, step)
             elif tool == "sql":
                 # SQL requests are satisfied by the pandas layer, so record a
                 # real result instead of skipping the step.
@@ -164,9 +168,25 @@ class ToolExecutor:
         result = {}
         
         if operation == "describe":
-            result["statistics"] = _to_native(
-                self.df.describe(include=[np.number]).to_dict()
-            )
+            # Try numeric describe first, fall back to all types if no numeric columns
+            numeric_df = self.df.select_dtypes(include=[np.number])
+            if len(numeric_df.columns) > 0:
+                result["statistics"] = _to_native(
+                    numeric_df.describe().to_dict()
+                )
+            else:
+                # For non-numeric data, provide summary info
+                result["summary"] = _to_native({
+                    col: {
+                        "count": int(self.df[col].count()),
+                        "unique": int(self.df[col].nunique()),
+                        "top": str(self.df[col].mode()[0]) if len(self.df[col].mode()) > 0 else None,
+                        "freq": int(self.df[col].value_counts().iloc[0]) if len(self.df[col].value_counts()) > 0 else 0,
+                        "dtype": str(self.df[col].dtype)
+                    }
+                    for col in self.df.columns
+                })
+                result["note"] = "Dataset contains no numeric columns. Showing categorical summary."
         elif operation == "groupby":
             dimension = step.get("dimension")
             metric = step.get("metric")
@@ -215,9 +235,23 @@ class ToolExecutor:
                     result["trend"] = _to_native(trend.to_dict(orient="records"))
         elif operation == "correlation":
             numeric_df = self.df.select_dtypes(include=[np.number])
-            result["correlation_matrix"] = _to_native(numeric_df.corr().to_dict())
+            if len(numeric_df.columns) > 1:
+                result["correlation_matrix"] = _to_native(numeric_df.corr().to_dict())
+            else:
+                result["note"] = "Correlation requires at least 2 numeric columns"
         elif operation == "outlier_detection":
-            result["outliers"] = self._iqr_outliers()
+            numeric_df = self.df.select_dtypes(include=[np.number])
+            if len(numeric_df.columns) > 0:
+                result["outliers"] = self._iqr_outliers()
+            else:
+                result["note"] = "Outlier detection requires numeric columns"
+                # For categorical data, show value frequency outliers
+                result["categorical_outliers"] = _to_native({
+                    col: {
+                        "rare_values": self.df[col].value_counts()[self.df[col].value_counts() < 2].to_dict()
+                    }
+                    for col in self.df.select_dtypes(exclude=[np.number]).columns
+                })
         elif operation == "statistical_test":
             result.update(self._run_statistical_test(step))
         
@@ -361,6 +395,28 @@ class ToolExecutor:
                 result["outlier_percentage"] = float((outliers == -1).sum() / len(outliers) * 100)
         
         return result
+
+    def _execute_knowledge_base(self, operation: str, step: Dict[str, Any]) -> Dict[str, Any]:
+        """Answer general questions using LLM's knowledge base."""
+        description = step.get("description", "")
+        goal = self.session_state.get("goal", "")
+        
+        # Provide some context about the dataset if we have it
+        context = ""
+        if self.df is not None:
+            context = f"Dataset: {self.dataset_info.get('filename')}\n"
+            context += f"Columns: {', '.join(self.df.columns)}\n"
+            context += f"Rows: {len(self.df)}\n"
+            
+        answer = self.llm_service.answer_general_question(
+            question=description if "question" in description.lower() else f"{description} (Goal: {goal})",
+            context=context
+        )
+        
+        return {
+            "answer": answer,
+            "type": "general_insight"
+        }
     
     def _build_figure(self, chart_type: str, dimension: str = None, metric: str = None,
                       aggregation: str = "mean"):
@@ -372,6 +428,16 @@ class ToolExecutor:
         aggregation = aggregation if aggregation in ("sum", "mean", "count", "median", "min", "max") else "mean"
         has = lambda c: bool(c) and c in df.columns
         try:
+            # If no metric specified, try to find a suitable one
+            if not metric:
+                numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+                if numeric_cols:
+                    metric = numeric_cols[0]
+                else:
+                    # For non-numeric data, use count aggregation
+                    metric = "count"
+                    aggregation = "count"
+
             if has(dimension) and has(metric):
                 if chart_type in ("bar", "histogram", "box", "scatter"):
                     if chart_type == "box":
@@ -380,30 +446,62 @@ class ToolExecutor:
                     if chart_type == "scatter":
                         return px.scatter(df, x=dimension, y=metric,
                                           title=f"{metric} vs {dimension}")
-                    grouped = (
-                        df.groupby(dimension)[metric].agg(aggregation)
-                        .reset_index().sort_values(metric, ascending=False).head(20)
-                    )
-                    return px.bar(grouped, x=dimension, y=metric,
-                                  title=f"{aggregation.title()} {metric} by {dimension}")
+                    # Handle count aggregation for categorical data
+                    if aggregation == "count" or metric == "count":
+                        grouped = df[dimension].value_counts().head(20).reset_index()
+                        grouped.columns = [dimension, "count"]
+                        return px.bar(grouped, x=dimension, y="count",
+                                      title=f"Count by {dimension}")
+                    # Check if metric is numeric
+                    if metric in df.select_dtypes(include=[np.number]).columns:
+                        grouped = (
+                            df.groupby(dimension)[metric].agg(aggregation)
+                            .reset_index().sort_values(metric, ascending=False).head(20)
+                        )
+                        return px.bar(grouped, x=dimension, y=metric,
+                                      title=f"{aggregation.title()} {metric} by {dimension}")
+                    else:
+                        # For categorical metric, use count
+                        grouped = df.groupby(dimension).size().head(20).reset_index()
+                        grouped.columns = [dimension, "count"]
+                        return px.bar(grouped, x=dimension, y="count",
+                                      title=f"Count by {dimension}")
                 if chart_type == "line":
                     time_col = self._find_time_column()
                     if time_col:
                         d = df.copy()
                         d[time_col] = pd.to_datetime(d[time_col], errors="coerce")
                         series = d.dropna(subset=[time_col])
-                        series = series.groupby([dimension, time_col])[metric].agg(aggregation).reset_index()
-                        return px.line(series, x=time_col, y=metric, color=dimension,
-                                       title=f"{metric} over {time_col} by {dimension}")
+                        if metric in d.select_dtypes(include=[np.number]).columns:
+                            series = series.groupby([dimension, time_col])[metric].agg(aggregation).reset_index()
+                            return px.line(series, x=time_col, y=metric, color=dimension,
+                                           title=f"{metric} over {time_col} by {dimension}")
+                        else:
+                            series = series.groupby([dimension, time_col]).size().reset_index()
+                            series.columns = [dimension, time_col, "count"]
+                            return px.line(series, x=time_col, y="count", color=dimension,
+                                           title=f"Count over {time_col} by {dimension}")
             if has(metric):
                 if chart_type == "line":
                     time_col = self._find_time_column()
                     if time_col:
                         d = df.copy()
                         d[time_col] = pd.to_datetime(d[time_col], errors="coerce")
-                        trend = d.dropna(subset=[time_col]).groupby(time_col)[metric].agg(aggregation).reset_index()
-                        return px.line(trend, x=time_col, y=metric, title=f"{metric} over {time_col}")
-                return px.histogram(df, x=metric, title=f"Distribution of {metric}")
+                        if metric in d.select_dtypes(include=[np.number]).columns:
+                            trend = d.dropna(subset=[time_col]).groupby(time_col)[metric].agg(aggregation).reset_index()
+                            return px.line(trend, x=time_col, y=metric, title=f"{metric} over {time_col}")
+                        else:
+                            trend = d.dropna(subset=[time_col]).groupby(time_col).size().reset_index()
+                            trend.columns = [time_col, "count"]
+                            return px.line(trend, x=time_col, y="count", title=f"Count over {time_col}")
+                if metric in df.select_dtypes(include=[np.number]).columns:
+                    return px.histogram(df, x=metric, title=f"Distribution of {metric}")
+                else:
+                    # For categorical metric, show value counts
+                    value_counts = df[metric].value_counts().head(20)
+                    return px.bar(x=value_counts.index, y=value_counts.values,
+                                  title=f"Distribution of {metric}",
+                                  labels={"x": metric, "y": "count"})
         except Exception as e:
             print(f"Figure build failed ({chart_type} {dimension} {metric}): {e}")
         return None

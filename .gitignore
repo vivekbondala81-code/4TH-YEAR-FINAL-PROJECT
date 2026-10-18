@@ -28,6 +28,7 @@ ENV/
 uploads/
 analysis_results/
 evidence_store/
+exports/
 
 # Node
 node_modules/

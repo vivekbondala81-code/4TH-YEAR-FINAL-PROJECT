@@ -52,6 +52,7 @@ app.add_middleware(
 # Create necessary directories
 os.makedirs("uploads", exist_ok=True)
 os.makedirs("analysis_results", exist_ok=True)
+os.makedirs("exports", exist_ok=True)
 
 
 def _render_report_html(report: Dict[str, Any]) -> str:
@@ -476,6 +477,213 @@ async def download_report(session_id: str, format: str = "html"):
             "Content-Disposition": f'attachment; filename="analysis_report_{short_id}.html"'
         },
     )
+
+
+@app.post("/export")
+async def export_data(request: Dict[str, Any]):
+    """Export analysis results in various formats (CSV, Excel, JSON)"""
+    try:
+        session_id = request.get("session_id")
+        export_format = request.get("format", "csv")  # csv, excel, json
+
+        if not session_id:
+            return JSONResponse(
+                status_code=400,
+                content={"error": "session_id is required"}
+            )
+
+        session_state = analysis_memory.get_session(session_id)
+        file_id = session_state.get("file_id")
+        dataset_info = evidence_store.get_dataset(file_id)
+
+        if not dataset_info:
+            return JSONResponse(
+                status_code=404,
+                content={"error": "Dataset not found"}
+            )
+
+        import pandas as pd
+
+        # Load the original dataset
+        file_path = dataset_info.get("file_path")
+        if file_path.endswith(".csv"):
+            df = pd.read_csv(file_path)
+        else:
+            df = pd.read_excel(file_path)
+
+        # Create export directory
+        export_dir = "exports"
+        os.makedirs(export_dir, exist_ok=True)
+
+        export_filename = f"analysis_export_{session_id[:8]}"
+        export_path = os.path.join(export_dir, export_filename)
+
+        if export_format == "csv":
+            export_path += ".csv"
+            df.to_csv(export_path, index=False)
+        elif export_format == "excel":
+            export_path += ".xlsx"
+            df.to_excel(export_path, index=False)
+        elif export_format == "json":
+            export_path += ".json"
+            df.to_json(export_path, orient="records", indent=2)
+        else:
+            return JSONResponse(
+                status_code=400,
+                content={"error": f"Unsupported format: {export_format}"}
+            )
+
+        return {
+            "success": True,
+            "filename": export_filename,
+            "format": export_format,
+            "path": export_path
+        }
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"error": str(e)}
+        )
+
+
+@app.post("/compare")
+async def compare_dimensions(request: Dict[str, Any]):
+    """Compare different dimensions in the dataset"""
+    try:
+        session_id = request.get("session_id")
+        dimensions = request.get("dimensions", [])  # List of column names to compare
+
+        if not session_id:
+            return JSONResponse(
+                status_code=400,
+                content={"error": "session_id is required"}
+            )
+
+        session_state = analysis_memory.get_session(session_id)
+        file_id = session_state.get("file_id")
+        dataset_info = evidence_store.get_dataset(file_id)
+
+        if not dataset_info:
+            return JSONResponse(
+                status_code=404,
+                content={"error": "Dataset not found"}
+            )
+
+        import pandas as pd
+
+        # Load the dataset
+        file_path = dataset_info.get("file_path")
+        if file_path.endswith(".csv"):
+            df = pd.read_csv(file_path)
+        else:
+            df = pd.read_excel(file_path)
+
+        # If no dimensions specified, use top categorical columns
+        if not dimensions:
+            dimensions = [col for col in df.select_dtypes(exclude=['number']).columns[:3]]
+
+        # Generate comparison data
+        comparison_results = {}
+
+        for dim in dimensions:
+            if dim in df.columns:
+                # Value counts for this dimension
+                value_counts = df[dim].value_counts()
+                comparison_results[dim] = {
+                    "unique_values": int(df[dim].nunique()),
+                    "top_values": [
+                        {"value": str(val), "count": int(count)}
+                        for val, count in value_counts.head(10).items()
+                    ],
+                    "null_count": int(df[dim].isnull().sum()),
+                    "null_percentage": float((df[dim].isnull().sum() / len(df)) * 100)
+                }
+
+        return {
+            "session_id": session_id,
+            "dimensions": dimensions,
+            "comparison": comparison_results
+        }
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"error": str(e)}
+        )
+
+
+@app.post("/filter")
+async def filter_data(request: Dict[str, Any]):
+    """Filter dataset based on criteria"""
+    try:
+        session_id = request.get("session_id")
+        filters = request.get("filters", {})  # {column: value} or {column: {operator: value}}
+
+        if not session_id:
+            return JSONResponse(
+                status_code=400,
+                content={"error": "session_id is required"}
+            )
+
+        session_state = analysis_memory.get_session(session_id)
+        file_id = session_state.get("file_id")
+        dataset_info = evidence_store.get_dataset(file_id)
+
+        if not dataset_info:
+            return JSONResponse(
+                status_code=404,
+                content={"error": "Dataset not found"}
+            )
+
+        import pandas as pd
+
+        # Load the dataset
+        file_path = dataset_info.get("file_path")
+        if file_path.endswith(".csv"):
+            df = pd.read_csv(file_path)
+        else:
+            df = pd.read_excel(file_path)
+
+        # Apply filters
+        for column, criteria in filters.items():
+            if column not in df.columns:
+                continue
+
+            if isinstance(criteria, dict):
+                # Advanced filtering with operators
+                operator = criteria.get("operator", "eq")
+                value = criteria.get("value")
+
+                if operator == "eq":
+                    df = df[df[column] == value]
+                elif operator == "ne":
+                    df = df[df[column] != value]
+                elif operator == "gt":
+                    df = df[df[column] > value]
+                elif operator == "lt":
+                    df = df[df[column] < value]
+                elif operator == "gte":
+                    df = df[df[column] >= value]
+                elif operator == "lte":
+                    df = df[df[column] <= value]
+                elif operator == "contains":
+                    df = df[df[column].astype(str).str.contains(str(value), case=False, na=False)]
+                elif operator == "not_contains":
+                    df = df[~df[column].astype(str).str.contains(str(value), case=False, na=False)]
+            else:
+                # Simple equality filter
+                df = df[df[column] == criteria]
+
+        return {
+            "session_id": session_id,
+            "original_rows": len(dataset_info.get("profile", {}).get("column_stats", {})),
+            "filtered_rows": len(df),
+            "data": df.head(100).to_dict(orient="records")  # Return first 100 rows
+        }
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"error": str(e)}
+        )
 
 
 @app.get("/session/{session_id}")
