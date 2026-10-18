@@ -14,12 +14,15 @@ class HypothesisEngine:
         
     def generate_hypotheses(self) -> List[Dict[str, Any]]:
         """Generate multiple hypotheses to explain the observed patterns using LLM"""
-        if self.use_llm and self.llm_service:
+        if self.use_llm and self.llm_service and self.llm_service.model:
             try:
                 self.hypotheses = self.llm_service.generate_hypotheses(
                     self.goal, self.analysis_plan, self.dataset_info
                 )
-                return self.hypotheses
+                # Validate that the LLM returned meaningful hypotheses
+                if self.hypotheses and len(self.hypotheses) > 0:
+                    return self.hypotheses
+                print("LLM returned empty hypotheses, falling back to rule-based")
             except Exception as e:
                 print(f"LLM hypothesis generation failed, falling back to rule-based: {e}")
         

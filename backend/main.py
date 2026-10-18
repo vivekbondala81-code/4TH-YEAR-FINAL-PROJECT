@@ -1,9 +1,11 @@
 from fastapi import FastAPI, UploadFile, File, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.concurrency import run_in_threadpool
 from contextlib import asynccontextmanager
 import os
 import json
+import asyncio
 from typing import Dict, Any
 import uuid
 
@@ -71,16 +73,18 @@ async def upload_dataset(file: UploadFile = File(...)):
             content = await file.read()
             buffer.write(content)
         
-        # Profile the dataset
-        profiler = DatasetProfiler(file_path)
-        profile = profiler.profile()
+        # Profiling is CPU-bound; run it off the event loop.
+        def _profile_dataset():
+            profiler = DatasetProfiler(file_path)
+            profile = profiler.profile()
+            
+            quality_analyzer = DataQualityAnalyzer(profile)
+            quality_report = quality_analyzer.analyze()
+            
+            evidence_store.store_dataset(file_id, file.filename, profile, quality_report, file_path)
+            return profile, quality_report
         
-        # Analyze data quality
-        quality_analyzer = DataQualityAnalyzer(profile)
-        quality_report = quality_analyzer.analyze()
-        
-        # Store in evidence store
-        evidence_store.store_dataset(file_id, file.filename, profile, quality_report, file_path)
+        profile, quality_report = await run_in_threadpool(_profile_dataset)
         
         return {
             "file_id": file_id,
@@ -113,16 +117,23 @@ async def start_analysis(request: Dict[str, Any]):
         # Initialize analysis memory for this session
         analysis_memory.create_session(session_id, file_id, goal)
         
+        # Register session with evidence store (maps session_id -> file_id)
+        evidence_store.register_session(session_id, file_id)
+        
         # Get dataset profile
         dataset_info = evidence_store.get_dataset(file_id)
+        # The planner/hypothesis engine expect the profile fields at top level
+        profile = dataset_info.get("profile", dataset_info)
         
-        # Create analysis plan (with LLM)
-        planner = AnalysisPlanner(goal, dataset_info, use_llm=True)
-        analysis_plan = planner.create_plan()
+        # Planning + hypothesis generation call the LLM (blocking network I/O),
+        # so they run in a worker thread to keep the event loop responsive.
+        def _build_plan():
+            planner = AnalysisPlanner(goal, profile, use_llm=True)
+            plan = planner.create_plan()
+            hypothesis_engine = HypothesisEngine(goal, plan, profile, use_llm=True)
+            return plan, hypothesis_engine.generate_hypotheses()
         
-        # Generate hypotheses (with LLM)
-        hypothesis_engine = HypothesisEngine(goal, analysis_plan, dataset_info, use_llm=True)
-        hypotheses = hypothesis_engine.generate_hypotheses()
+        analysis_plan, hypotheses = await run_in_threadpool(_build_plan)
         
         # Store in memory
         analysis_memory.store_plan(session_id, analysis_plan)
@@ -155,9 +166,13 @@ async def execute_analysis(request: Dict[str, Any]):
         session_state = analysis_memory.get_session(session_id)
         dataset_info = evidence_store.get_dataset(session_state["file_id"])
         
-        # Execute tools with real-time updates
-        tool_executor = ToolExecutor(dataset_info, session_state, evidence_store, connection_manager)
-        execution_results = tool_executor.execute_all()
+        # Execute tools in a worker thread so WebSocket progress updates can be
+        # delivered to the dashboard in real time while analysis runs.
+        loop = asyncio.get_running_loop()
+        tool_executor = ToolExecutor(
+            dataset_info, session_state, evidence_store, connection_manager, loop=loop
+        )
+        execution_results = await run_in_threadpool(tool_executor.execute_all)
         
         # Store results
         analysis_memory.store_execution_results(session_id, execution_results)
@@ -189,14 +204,14 @@ async def verify_analysis(request: Dict[str, Any]):
         
         # Verify results with LLM interpretation
         verification_engine = VerificationEngine(session_state, evidence_store, use_llm=True)
-        verification_results = verification_engine.verify()
+        verification_results = await run_in_threadpool(verification_engine.verify)
         
         # Store verification results
         analysis_memory.store_verification(session_id, verification_results)
         
         # If verification fails, trigger revision
         if not verification_results["verified"]:
-            revision_results = verification_engine.revise()
+            revision_results = await run_in_threadpool(verification_engine.revise)
             analysis_memory.store_revision(session_id, revision_results)
             return {
                 "session_id": session_id,
@@ -233,7 +248,7 @@ async def generate_report(request: Dict[str, Any]):
         
         # Generate report with LLM interpretation
         report_generator = ReportGenerator(session_state, evidence_store, use_llm=True)
-        report = report_generator.generate()
+        report = await run_in_threadpool(report_generator.generate)
         
         # Store report
         analysis_memory.store_report(session_id, report)

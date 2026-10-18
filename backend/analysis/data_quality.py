@@ -11,7 +11,7 @@ class DataQualityAnalyzer:
     def analyze(self) -> Dict[str, Any]:
         """Generate comprehensive data quality report"""
         self.quality_report = {
-            "overall_score": 0,
+            "overall_score": 0.0,
             "issues": [],
             "warnings": [],
             "recommendations": [],
@@ -22,7 +22,7 @@ class DataQualityAnalyzer:
         total_warnings = 0
         
         # Analyze each column
-        for col_name, col_info in self.profile["columns"].items():
+        for col_name, col_info in self.profile["column_stats"].items():
             col_status = {
                 "status": "good",
                 "issues": [],
@@ -76,10 +76,10 @@ class DataQualityAnalyzer:
             total_warnings += 1
         
         # Calculate overall score
-        total_columns = len(self.profile["columns"])
+        total_columns = len(self.profile["column_stats"])
         if total_columns > 0:
             score = 100 - (total_issues * 20) - (total_warnings * 5)
-            self.quality_report["overall_score"] = max(0, min(100, score))
+            self.quality_report["overall_score"] = max(0.0, min(100.0, float(score)))
         
         # Summary
         self.quality_report["summary"] = {

@@ -14,14 +14,17 @@ class AnalysisPlanner:
         
     def create_plan(self) -> Dict[str, Any]:
         """Generate detailed analysis plan using LLM or rule-based approach"""
-        if self.use_llm and self.llm_service:
+        if self.use_llm and self.llm_service and self.llm_service.model:
             try:
                 self.plan = self.llm_service.generate_analysis_plan(self.goal, self.dataset_info)
-                return self.plan
+                # Validate that the LLM returned a meaningful plan
+                if self.plan and self.plan.get("steps") and len(self.plan["steps"]) > 0:
+                    return self.plan
+                print("LLM returned empty plan, falling back to rule-based")
             except Exception as e:
                 print(f"LLM planning failed, falling back to rule-based: {e}")
         
-        # Fallback to rule-based planning
+        # Fallback to rule-based planning (comprehensive)
         self.plan = {
             "main_goal": self.goal,
             "questions": [],

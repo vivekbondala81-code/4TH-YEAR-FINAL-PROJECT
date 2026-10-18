@@ -3,13 +3,38 @@ import numpy as np
 from typing import Dict, Any, List
 import os
 
+
+def _to_native(obj):
+    """Recursively convert numpy types to native Python types for JSON serialization."""
+    if isinstance(obj, dict):
+        return {str(k): _to_native(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_to_native(v) for v in obj]
+    if isinstance(obj, (np.integer,)):
+        return int(obj)
+    if isinstance(obj, (np.floating,)):
+        val = float(obj)
+        if np.isnan(val) or np.isinf(val):
+            return None
+        return val
+    if isinstance(obj, (np.bool_,)):
+        return bool(obj)
+    if isinstance(obj, np.ndarray):
+        return [_to_native(v) for v in obj.tolist()]
+    if isinstance(obj, pd.Timestamp):
+        return obj.isoformat()
+    if obj is pd.NaT:
+        return None
+    return obj
+
+
 class DatasetProfiler:
     """Profiles uploaded datasets to understand structure and content"""
     
     def __init__(self, file_path: str):
         self.file_path = file_path
         self.df = None
-        self.profile = {}
+        self._profile = {}
         
     def _load_data(self) -> pd.DataFrame:
         """Load data from CSV or Excel"""
@@ -29,23 +54,23 @@ class DatasetProfiler:
         self._load_data()
         
         # Basic info
-        self.profile = {
-            "rows": len(self.df),
-            "columns": len(self.df.columns),
-            "column_names": list(self.df.columns),
-            "memory_usage": self.df.memory_usage(deep=True).sum(),
+        result = {
+            "rows": int(len(self.df)),
+            "columns": int(len(self.df.columns)),
+            "column_names": [str(c) for c in self.df.columns],
+            "memory_usage": int(self.df.memory_usage(deep=True).sum()),
         }
         
         # Column details
-        self.profile["columns"] = {}
+        result["column_stats"] = {}
         for col in self.df.columns:
             col_info = {
                 "dtype": str(self.df[col].dtype),
-                "non_null_count": self.df[col].count(),
-                "null_count": self.df[col].isnull().sum(),
-                "null_percentage": (self.df[col].isnull().sum() / len(self.df)) * 100,
-                "unique_count": self.df[col].nunique(),
-                "unique_percentage": (self.df[col].nunique() / len(self.df)) * 100,
+                "non_null_count": int(self.df[col].count()),
+                "null_count": int(self.df[col].isnull().sum()),
+                "null_percentage": float((self.df[col].isnull().sum() / len(self.df)) * 100),
+                "unique_count": int(self.df[col].nunique()),
+                "unique_percentage": float((self.df[col].nunique() / len(self.df)) * 100),
             }
             
             # Add statistics for numeric columns
@@ -67,25 +92,32 @@ class DatasetProfiler:
                     for val, count in top_values.items()
                 ]
             
-            self.profile["columns"][col] = col_info
+            result["column_stats"][col] = col_info
         
         # Duplicates
-        self.profile["duplicate_count"] = self.df.duplicated().sum()
-        self.profile["duplicate_percentage"] = (self.profile["duplicate_count"] / len(self.df)) * 100
+        result["duplicate_count"] = int(self.df.duplicated().sum())
+        result["duplicate_percentage"] = float((result["duplicate_count"] / len(self.df)) * 100)
         
         # Data types summary
-        self.profile["numeric_columns"] = [
-            col for col in self.df.columns 
+        result["numeric_columns"] = [
+            str(col) for col in self.df.columns 
             if pd.api.types.is_numeric_dtype(self.df[col])
         ]
-        self.profile["categorical_columns"] = [
-            col for col in self.df.columns 
+        result["categorical_columns"] = [
+            str(col) for col in self.df.columns 
             if not pd.api.types.is_numeric_dtype(self.df[col])
         ]
         
         # Potential relationships (correlation for numeric columns)
-        if len(self.profile["numeric_columns"]) > 1:
-            corr_matrix = self.df[self.profile["numeric_columns"]].corr()
-            self.profile["correlations"] = corr_matrix.to_dict()
+        if len(result["numeric_columns"]) > 1:
+            try:
+                corr_matrix = self.df[result["numeric_columns"]].corr()
+                result["correlations"] = _to_native(corr_matrix.to_dict())
+            except Exception as e:
+                print(f"Warning: Could not compute correlations: {e}")
+                result["correlations"] = {}
+        else:
+            result["correlations"] = {}
         
-        return self.profile
+        self._profile = _to_native(result)
+        return self._profile

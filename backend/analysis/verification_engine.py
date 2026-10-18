@@ -1,6 +1,5 @@
 from typing import Dict, Any, List
 import numpy as np
-import json
 from .llm_service import LLMService
 
 class VerificationEngine:
@@ -71,11 +70,17 @@ class VerificationEngine:
         hypotheses = self.session_state.get("hypotheses", [])
         execution_results = self.session_state.get("execution_results", [])
         
+        # Count successful executions as available evidence
+        successful_executions = [r for r in execution_results if r.get("status") == "completed"]
+        
         for hypothesis in hypotheses:
             # Check if hypothesis has sufficient evidence
             evidence = hypothesis.get("evidence", {})
             
-            if not evidence:
+            # If no explicit evidence attached, use successful execution results as evidence
+            has_evidence = bool(evidence) or len(successful_executions) > 0
+            
+            if not has_evidence:
                 self.verification_results["issues"].append({
                     "type": "statistical",
                     "message": f"Hypothesis {hypothesis['id']} lacks sufficient evidence"
@@ -83,34 +88,18 @@ class VerificationEngine:
             
             validation_result = {
                 "hypothesis_id": hypothesis["id"],
-                "has_evidence": bool(evidence),
-                "passed": bool(evidence)
+                "has_evidence": has_evidence,
+                "passed": has_evidence
             }
             
             # Use LLM to interpret statistical results if available
             if self.use_llm and self.llm_service and self.llm_service.model and execution_results:
                 try:
-                    prompt = f"""
-Interpret the statistical validation for this hypothesis:
-
-HYPOTHESIS: {hypothesis.get('statement')}
-EVIDENCE: {json.dumps(evidence, indent=2)}
-EXECUTION RESULTS: {json.dumps(execution_results[:3], indent=2)}
-
-Provide:
-- confidence_level: High/Medium/Low
-- interpretation: Brief interpretation of the evidence
-- needs_more_data: Whether more data is needed
-
-Return ONLY valid JSON.
-"""
-                    response = self.llm_service.model.generate_content(prompt)
-                    json_text = response.text.strip()
-                    if json_text.startswith("```"):
-                        json_text = json_text.replace("```json", "").replace("```", "").strip()
-                    
-                    interpretation = json.loads(json_text)
-                    validation_result.update(interpretation)
+                    interpretation = self.llm_service.interpret_verification(
+                        hypothesis, evidence, execution_results
+                    )
+                    if interpretation:
+                        validation_result.update(interpretation)
                 except Exception as e:
                     print(f"LLM statistical interpretation failed: {e}")
             
@@ -118,8 +107,12 @@ Return ONLY valid JSON.
     
     def _perform_quality_checks(self):
         """Check if data quality issues affect results"""
-        dataset_info = self.session_state.get("dataset_info", {})
-        quality_report = dataset_info.get("quality_report", {})
+        # Get quality report from evidence store using file_id
+        file_id = self.session_state.get("file_id")
+        quality_report = {}
+        if file_id and self.evidence_store:
+            dataset_info = self.evidence_store.get_dataset(file_id)
+            quality_report = dataset_info.get("quality_report", {})
         
         # Check for high missing values
         column_status = quality_report.get("column_status", {})

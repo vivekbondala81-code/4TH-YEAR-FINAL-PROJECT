@@ -8,105 +8,135 @@ export default function ReportView({ report }: ReportViewProps) {
   if (!report) return null
 
   return (
-    <div className="bg-white rounded-lg shadow-md p-6">
-      <h2 className="text-2xl font-bold mb-4">Final Analytical Report</h2>
+    <div className="glass-card p-6 animate-fade-in">
+      <h2 className="text-2xl font-bold text-gray-800 mb-6 flex items-center gap-2">
+        <span className="text-3xl">📝</span>
+        Final Analytical Report
+      </h2>
       
       <div className="space-y-6">
         {/* Executive Summary */}
-        <div className="border-b pb-4">
-          <h3 className="text-lg font-semibold mb-2">Executive Summary</h3>
+        <div className="bg-gradient-to-br from-blue-50 to-purple-50 p-6 rounded-xl">
+          <h3 className="text-lg font-semibold mb-3 text-gray-700 flex items-center gap-2">
+            <span>📌</span>
+            Executive Summary
+          </h3>
           <p className="text-gray-700 whitespace-pre-line">{report.executive_summary}</p>
         </div>
 
         {/* Dataset Overview */}
-        <div className="border-b pb-4">
-          <h3 className="text-lg font-semibold mb-2">Dataset Overview</h3>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <p className="text-gray-600">Filename:</p>
-              <p className="font-medium">{report.dataset_overview?.filename}</p>
+        <div className="bg-white p-6 rounded-xl shadow-sm">
+          <h3 className="text-lg font-semibold mb-4 text-gray-700 flex items-center gap-2">
+            <span>📁</span>
+            Dataset Overview
+          </h3>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="bg-blue-50 p-4 rounded-lg">
+              <p className="text-sm text-gray-600">Filename</p>
+              <p className="font-medium text-gray-800 truncate">{report.dataset_overview?.filename}</p>
             </div>
-            <div>
-              <p className="text-gray-600">Rows:</p>
-              <p className="font-medium">{report.dataset_overview?.rows?.toLocaleString()}</p>
+            <div className="bg-purple-50 p-4 rounded-lg">
+              <p className="text-sm text-gray-600">Rows</p>
+              <p className="font-medium text-gray-800">{report.dataset_overview?.rows?.toLocaleString()}</p>
             </div>
-            <div>
-              <p className="text-gray-600">Columns:</p>
-              <p className="font-medium">{report.dataset_overview?.columns}</p>
+            <div className="bg-green-50 p-4 rounded-lg">
+              <p className="text-sm text-gray-600">Columns</p>
+              <p className="font-medium text-gray-800">{report.dataset_overview?.columns}</p>
+            </div>
+            <div className="bg-orange-50 p-4 rounded-lg">
+              <p className="text-sm text-gray-600">Numeric</p>
+              <p className="font-medium text-gray-800">{report.dataset_overview?.numeric_columns?.length || 0}</p>
             </div>
           </div>
         </div>
 
         {/* Data Quality */}
-        <div className="border-b pb-4">
-          <h3 className="text-lg font-semibold mb-2">Data Quality</h3>
-          <div className="mb-2">
-            <p className="text-gray-600">Overall Score:</p>
-            <div className="flex items-center gap-2">
-              <div className="w-full bg-gray-200 rounded-full h-4">
-                <div
-                  className="bg-blue-600 h-4 rounded-full"
-                  style={{ width: `${report.data_quality?.overall_score || 0}%` }}
-                />
-              </div>
-              <span className="font-bold">{report.data_quality?.overall_score?.toFixed(0)}%</span>
+        <div className="bg-white p-6 rounded-xl shadow-sm">
+          <h3 className="text-lg font-semibold mb-4 text-gray-700 flex items-center gap-2">
+            <span>✅</span>
+            Data Quality
+          </h3>
+          <div className="mb-4">
+            <div className="flex items-center justify-between mb-2">
+              <span className="font-medium text-gray-700">Overall Score</span>
+              <span className="text-2xl font-bold text-blue-600">{report.data_quality?.overall_score || 0}%</span>
+            </div>
+            <div className="w-full bg-gray-200 rounded-full h-3">
+              <div
+                className={`h-3 rounded-full transition-all ${
+                  (report.data_quality?.overall_score || 0) >= 80 ? 'bg-gradient-to-r from-green-400 to-green-600' :
+                  (report.data_quality?.overall_score || 0) >= 60 ? 'bg-gradient-to-r from-yellow-400 to-yellow-600' :
+                  'bg-gradient-to-r from-red-400 to-red-600'
+                }`}
+                style={{ width: `${report.data_quality?.overall_score || 0}%` }}
+              />
             </div>
           </div>
         </div>
 
         {/* Key Findings */}
-        <div className="border-b pb-4">
-          <h3 className="text-lg font-semibold mb-2">Key Findings</h3>
-          <div className="space-y-2">
+        <div className="bg-white p-6 rounded-xl shadow-sm">
+          <h3 className="text-lg font-semibold mb-4 text-gray-700 flex items-center gap-2">
+            <span>🎯</span>
+            Key Findings
+          </h3>
+          <div className="space-y-3">
             {report.key_findings?.map((finding: any, i: number) => (
-              <div key={i} className="bg-green-50 p-3 rounded border-l-4 border-green-600">
-                <p className="font-medium">{finding.description}</p>
+              <div key={i} className="bg-gradient-to-r from-green-50 to-emerald-50 p-4 rounded-lg border-l-4 border-green-500">
+                <p className="font-medium text-gray-800">{finding.description}</p>
               </div>
             ))}
           </div>
         </div>
 
         {/* Hypotheses */}
-        <div className="border-b pb-4">
-          <h3 className="text-lg font-semibold mb-2">Hypotheses</h3>
-          <div className="space-y-2">
+        <div className="bg-white p-6 rounded-xl shadow-sm">
+          <h3 className="text-lg font-semibold mb-4 text-gray-700 flex items-center gap-2">
+            <span>💡</span>
+            Hypotheses
+          </h3>
+          <div className="space-y-3">
             {report.hypotheses?.map((h: any) => (
-              <div key={h.id} className="bg-blue-50 p-3 rounded">
+              <div key={h.id} className="bg-blue-50 p-4 rounded-lg">
                 <p className="font-semibold text-blue-800">{h.id}</p>
                 <p className="text-gray-700">{h.statement}</p>
-                <p className="text-sm text-gray-500">Status: {h.status}</p>
+                <p className="text-sm text-gray-500 mt-1">Status: {h.status}</p>
               </div>
             ))}
           </div>
         </div>
 
         {/* Verification */}
-        <div className="border-b pb-4">
-          <h3 className="text-lg font-semibold mb-2">Verification</h3>
+        <div className="bg-white p-6 rounded-xl shadow-sm">
+          <h3 className="text-lg font-semibold mb-4 text-gray-700 flex items-center gap-2">
+            <span>🔍</span>
+            Verification
+          </h3>
           <div className="space-y-2">
             <div className="flex items-center gap-2">
-              <span className="font-semibold">Verified:</span>
-              <span className={report.verification?.verified ? 'text-green-600' : 'text-red-600'}>
+              <span className="font-medium text-gray-700">Verified:</span>
+              <span className={report.verification?.verified ? 'text-green-600 font-bold' : 'text-red-600 font-bold'}>
                 {report.verification?.verified ? 'Yes' : 'No'}
               </span>
             </div>
             <div className="flex items-center gap-2">
-              <span className="font-semibold">Confidence:</span>
-              <span className="font-bold">
-                {(report.confidence?.overall_confidence * 100).toFixed(0)}%
-              </span>
+              <span className="font-medium text-gray-700">Confidence:</span>
+              <span className="font-bold text-blue-600">{((report.confidence?.overall_confidence || 0) * 100).toFixed(0)}%</span>
             </div>
             <div className="flex items-center gap-2">
-              <span className="font-semibold">Level:</span>
-              <span>{report.confidence?.confidence_level}</span>
+              <span className="font-medium text-gray-700">Level:</span>
+              <span className="font-medium">{report.confidence?.confidence_level}</span>
             </div>
           </div>
         </div>
 
         {/* Limitations */}
-        <div className="border-b pb-4">
-          <h3 className="text-lg font-semibold mb-2">Limitations</h3>
-          <ul className="list-disc list-inside space-y-1 text-gray-700">
+        <div className="bg-white p-6 rounded-xl shadow-sm">
+          <h3 className="text-lg font-semibold mb-4 text-gray-700 flex items-center gap-2">
+            <span>⚠️</span>
+            Limitations
+          </h3>
+          <ul className="list-disc list-inside space-y-2 text-gray-700">
             {report.limitations?.map((limit: string, i: number) => (
               <li key={i}>{limit}</li>
             ))}
@@ -114,9 +144,12 @@ export default function ReportView({ report }: ReportViewProps) {
         </div>
 
         {/* Recommendations */}
-        <div>
-          <h3 className="text-lg font-semibold mb-2">Recommendations</h3>
-          <ul className="list-disc list-inside space-y-1 text-gray-700">
+        <div className="bg-gradient-to-br from-purple-50 to-pink-50 p-6 rounded-xl">
+          <h3 className="text-lg font-semibold mb-4 text-gray-700 flex items-center gap-2">
+            <span>💡</span>
+            Recommendations
+          </h3>
+          <ul className="list-disc list-inside space-y-2 text-gray-700">
             {report.recommendations?.map((rec: string, i: number) => (
               <li key={i}>{rec}</li>
             ))}
