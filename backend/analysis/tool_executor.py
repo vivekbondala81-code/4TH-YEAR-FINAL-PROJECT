@@ -11,25 +11,34 @@ import os
 
 
 def _to_native(obj):
-    """Recursively convert numpy/pandas types to native Python types for JSON."""
+    """Recursively convert numpy/pandas types to JSON-safe Python types."""
     if isinstance(obj, dict):
         return {str(k): _to_native(v) for k, v in obj.items()}
     if isinstance(obj, (list, tuple)):
         return [_to_native(v) for v in obj]
-    if isinstance(obj, (np.integer,)):
+    if obj is None or obj is pd.NaT:
+        return None
+    # bool must be checked before int (bool is a subclass of int).
+    if isinstance(obj, (bool, np.bool_)):
+        return bool(obj)
+    if isinstance(obj, (int, np.integer)):
         return int(obj)
-    if isinstance(obj, (np.floating,)):
+    if isinstance(obj, (float, np.floating)):
         val = float(obj)
         if np.isnan(val) or np.isinf(val):
             return None
         return val
-    if isinstance(obj, (np.bool_,)):
-        return bool(obj)
     if isinstance(obj, np.ndarray):
         return [_to_native(v) for v in obj.tolist()]
     if isinstance(obj, pd.Timestamp):
         return obj.isoformat()
-    return obj
+    if isinstance(obj, (pd.Timedelta, np.timedelta64)):
+        return str(obj)
+    if isinstance(obj, np.datetime64):
+        return pd.Timestamp(obj).isoformat()
+    if isinstance(obj, str):
+        return obj
+    return str(obj)
 
 class ToolExecutor:
     """Executes analysis tools (Python, SQL, Statistics, ML, Visualization) with real-time updates"""
@@ -42,6 +51,11 @@ class ToolExecutor:
         self.loop = loop
         self.df = None
         self.execution_results = []
+        self.plan_steps: List[Dict[str, Any]] = []
+        # (chart_type, dimension, metric) signatures already emitted, so the
+        # plan-driven pass never duplicates a chart the plan already asked for.
+        self._viz_signatures: set = set()
+        self._viz_counter = 0
     
     def _notify(self, session_id: str, step: str, status: str):
         """Push a progress update to the WebSocket without blocking analysis.
@@ -77,6 +91,7 @@ class ToolExecutor:
         
         analysis_plan = self.session_state.get("analysis_plan", {})
         steps = analysis_plan.get("steps", [])
+        self.plan_steps = steps
         session_id = self.session_state.get("session_id")
         
         for step in steps:
@@ -121,15 +136,17 @@ class ToolExecutor:
         }
         
         try:
-            if tool == "python/pandas":
+            if operation == "visualization" or tool == "visualization":
+                result["result"] = self._execute_visualization_step(step)
+            elif tool == "python/pandas":
                 result["result"] = self._execute_pandas_operation(operation, step)
             elif tool == "python/scipy":
                 result["result"] = self._execute_scipy_operation(operation, step)
             elif tool == "python/sklearn":
                 result["result"] = self._execute_sklearn_operation(operation, step)
-            elif tool in ("sql", "visualization"):
-                # SQL/visualization requests are satisfied by the pandas + plotting
-                # layers, so record a real result instead of skipping the step.
+            elif tool == "sql":
+                # SQL requests are satisfied by the pandas layer, so record a
+                # real result instead of skipping the step.
                 result["result"] = self._execute_generic_operation(operation, step)
             else:
                 # Unknown tool from the LLM -> fall back to a descriptive pass so
@@ -147,41 +164,62 @@ class ToolExecutor:
         result = {}
         
         if operation == "describe":
-            result["statistics"] = _to_native(self.df.describe().to_dict())
+            result["statistics"] = _to_native(
+                self.df.describe(include=[np.number]).to_dict()
+            )
         elif operation == "groupby":
             dimension = step.get("dimension")
+            metric = step.get("metric")
+            aggregation = (step.get("aggregation") or "mean").lower()
+            if aggregation not in ("sum", "mean", "count", "median", "min", "max"):
+                aggregation = "mean"
             if not dimension or dimension not in self.df.columns:
                 # Fall back to the first categorical column so the step still runs.
                 cat_cols = self.df.select_dtypes(exclude=[np.number]).columns.tolist()
                 dimension = cat_cols[0] if cat_cols else None
             if dimension and dimension in self.df.columns:
                 numeric_cols = self.df.select_dtypes(include=[np.number]).columns.tolist()
-                if numeric_cols:
-                    grouped = self.df.groupby(dimension)[numeric_cols].agg(['mean', 'sum', 'count'])
-                    # Flatten MultiIndex columns to avoid tuple keys in JSON
-                    grouped.columns = ['_'.join(col).strip() for col in grouped.columns.values]
+                metrics = [metric] if (metric and metric in numeric_cols) else numeric_cols
+                if metrics:
+                    grouped = self.df.groupby(dimension).agg({m: aggregation for m in metrics})
                     grouped = grouped.reset_index()
+                    primary = metrics[0]
+                    if primary in grouped.columns:
+                        grouped = grouped.sort_values(primary, ascending=False)
                     result["group_by"] = dimension
+                    result["metric"] = primary
+                    result["aggregation"] = aggregation
                     # Convert to records for clean JSON serialization
                     result["grouped_data"] = _to_native(grouped.to_dict(orient="records"))
         elif operation == "time_series":
             # Simple time series analysis
-            date_cols = self.df.select_dtypes(include=['datetime64']).columns
-            if len(date_cols) > 0:
-                date_col = date_cols[0]
-                self.df[date_col] = pd.to_datetime(self.df[date_col])
-                self.df = self.df.sort_values(date_col)
+            date_col = self._find_time_column()
+            metric = step.get("metric")
+            if date_col:
+                self.df[date_col] = pd.to_datetime(self.df[date_col], errors="coerce")
+                result["time_column"] = date_col
                 result["time_range"] = {
                     "start": str(self.df[date_col].min()),
                     "end": str(self.df[date_col].max())
                 }
+                if metric and metric in self.df.columns:
+                    trend = (
+                        self.df.dropna(subset=[date_col])
+                        .groupby(self.df[date_col].dt.to_period("M"))[metric]
+                        .mean()
+                        .reset_index()
+                    )
+                    trend.columns = [date_col, metric]
+                    trend[date_col] = trend[date_col].astype(str)
+                    result["metric"] = metric
+                    result["trend"] = _to_native(trend.to_dict(orient="records"))
         elif operation == "correlation":
             numeric_df = self.df.select_dtypes(include=[np.number])
             result["correlation_matrix"] = _to_native(numeric_df.corr().to_dict())
         elif operation == "outlier_detection":
             result["outliers"] = self._iqr_outliers()
         elif operation == "statistical_test":
-            result.update(self._run_statistical_test())
+            result.update(self._run_statistical_test(step))
         
         return result
     
@@ -202,7 +240,7 @@ class ToolExecutor:
                     }
             result["outliers"] = outliers
         elif operation == "statistical_test":
-            result.update(self._run_statistical_test())
+            result.update(self._run_statistical_test(step))
         elif operation == "correlation":
             result["correlation_tests"] = self._run_correlation_tests()
         
@@ -225,8 +263,21 @@ class ToolExecutor:
             }
         return outliers
     
-    def _run_statistical_test(self) -> Dict[str, Any]:
+    def _find_time_column(self):
+        """Locate a datetime-like column (real dtype or a parseable name)."""
+        date_cols = self.df.select_dtypes(include=["datetime64"]).columns.tolist()
+        if date_cols:
+            return date_cols[0]
+        for col in self.df.columns:
+            if any(k in col.lower() for k in ("date", "time", "month", "year", "period")):
+                parsed = pd.to_datetime(self.df[col], errors="coerce")
+                if parsed.notna().mean() > 0.8:
+                    return col
+        return None
+
+    def _run_statistical_test(self, step: Dict[str, Any] = None) -> Dict[str, Any]:
         """Compare a numeric metric across groups of a categorical dimension."""
+        step = step or {}
         numeric_cols = self.df.select_dtypes(include=[np.number]).columns.tolist()
         cat_cols = [
             c for c in self.df.select_dtypes(exclude=[np.number]).columns
@@ -235,7 +286,12 @@ class ToolExecutor:
         if not numeric_cols or not cat_cols:
             return {"note": "No suitable numeric/categorical pair for a group test"}
         
-        metric, group = numeric_cols[0], cat_cols[0]
+        metric = step.get("metric")
+        if metric not in numeric_cols:
+            metric = numeric_cols[0]
+        group = step.get("dimension")
+        if group not in cat_cols:
+            group = cat_cols[0]
         groups = [
             g[metric].dropna().values
             for _, g in self.df.groupby(group)
@@ -250,6 +306,9 @@ class ToolExecutor:
             "metric": metric,
             "group_by": group,
             "groups": len(groups),
+            "group_means": _to_native(
+                self.df.groupby(group)[metric].mean().sort_values(ascending=False).to_dict()
+            ),
             "statistic": float(stat),
             "p_value": float(p_value),
             "significant": bool(p_value < 0.05),
@@ -303,72 +362,139 @@ class ToolExecutor:
         
         return result
     
-    def _generate_visualizations(self):
-        """Generate interactive Plotly visualizations and persist their figures"""
-        numeric_cols = self.df.select_dtypes(include=[np.number]).columns
-        categorical_cols = self.df.select_dtypes(exclude=[np.number]).columns
-        session_id = self.session_state["session_id"]
+    def _build_figure(self, chart_type: str, dimension: str = None, metric: str = None,
+                      aggregation: str = "mean"):
+        """Build a Plotly figure for a requested chart, using real columns.
 
-        # Namespace outputs per session so concurrent analyses never overwrite
-        # each other's charts.
+        Returns None when the requested chart cannot be built from this dataset.
+        """
+        df = self.df
+        aggregation = aggregation if aggregation in ("sum", "mean", "count", "median", "min", "max") else "mean"
+        has = lambda c: bool(c) and c in df.columns
+        try:
+            if has(dimension) and has(metric):
+                if chart_type in ("bar", "histogram", "box", "scatter"):
+                    if chart_type == "box":
+                        return px.box(df, x=dimension, y=metric,
+                                      title=f"Distribution of {metric} by {dimension}")
+                    if chart_type == "scatter":
+                        return px.scatter(df, x=dimension, y=metric,
+                                          title=f"{metric} vs {dimension}")
+                    grouped = (
+                        df.groupby(dimension)[metric].agg(aggregation)
+                        .reset_index().sort_values(metric, ascending=False).head(20)
+                    )
+                    return px.bar(grouped, x=dimension, y=metric,
+                                  title=f"{aggregation.title()} {metric} by {dimension}")
+                if chart_type == "line":
+                    time_col = self._find_time_column()
+                    if time_col:
+                        d = df.copy()
+                        d[time_col] = pd.to_datetime(d[time_col], errors="coerce")
+                        series = d.dropna(subset=[time_col])
+                        series = series.groupby([dimension, time_col])[metric].agg(aggregation).reset_index()
+                        return px.line(series, x=time_col, y=metric, color=dimension,
+                                       title=f"{metric} over {time_col} by {dimension}")
+            if has(metric):
+                if chart_type == "line":
+                    time_col = self._find_time_column()
+                    if time_col:
+                        d = df.copy()
+                        d[time_col] = pd.to_datetime(d[time_col], errors="coerce")
+                        trend = d.dropna(subset=[time_col]).groupby(time_col)[metric].agg(aggregation).reset_index()
+                        return px.line(trend, x=time_col, y=metric, title=f"{metric} over {time_col}")
+                return px.histogram(df, x=metric, title=f"Distribution of {metric}")
+        except Exception as e:
+            print(f"Figure build failed ({chart_type} {dimension} {metric}): {e}")
+        return None
+
+    def _store_figure(self, fig, description: str, operation: str) -> Dict[str, Any]:
+        """Persist a figure to disk, the evidence store and the results list."""
+        session_id = self.session_state["session_id"]
         viz_dir = os.path.join("analysis_results", session_id)
         os.makedirs(viz_dir, exist_ok=True)
 
-        figures: List[tuple] = []
+        self._viz_counter += 1
+        viz_id = f"viz_{self._viz_counter}"
+        viz_path = os.path.join(viz_dir, f"{viz_id}.html")
+        fig.write_html(viz_path)
+        figure_json = json.loads(fig.to_json())
 
-        # Histogram for numeric columns (limit to first 3)
-        for col in numeric_cols[:3]:
-            figures.append((
-                px.histogram(self.df, x=col, title=f"Distribution of {col}"),
-                f"Histogram for {col}",
-                "histogram",
-            ))
+        # Ship the figure spec to the dashboard so it renders the real chart.
+        self.execution_results.append({
+            "step_id": viz_id,
+            "description": description,
+            "tool": "plotly",
+            "operation": operation,
+            "status": "completed",
+            "result": {"visualization_path": viz_path, "figure": figure_json}
+        })
+        self.evidence_store.store_visualization(
+            session_id, viz_id, viz_path, description, figure_json,
+        )
+        return {"visualization_path": viz_path, "figure": figure_json,
+                "chart_type": operation}
 
-        # Bar chart for categorical columns (limit to first 2)
-        for col in categorical_cols[:2]:
-            value_counts = self.df[col].value_counts().head(10)
-            figures.append((
-                px.bar(x=value_counts.index, y=value_counts.values,
-                       title=f"Top 10 values in {col}"),
-                f"Bar chart for {col}",
-                "bar_chart",
-            ))
+    def _execute_visualization_step(self, step: Dict[str, Any]) -> Dict[str, Any]:
+        """Produce the exact chart requested by a plan step."""
+        chart_type = (step.get("chart_type") or "bar").lower()
+        dimension = step.get("dimension")
+        metric = step.get("metric")
+        aggregation = step.get("aggregation", "mean")
 
-        # Correlation heatmap if enough numeric columns
-        if len(numeric_cols) >= 2:
+        fig = self._build_figure(chart_type, dimension, metric, aggregation)
+        if fig is None:
+            return self._execute_generic_operation("visualization", step)
+
+        self._viz_signatures.add((chart_type, dimension, metric))
+        return self._store_figure(fig, step.get("description", "Visualization"), f"{chart_type}_chart")
+
+    def _generate_visualizations(self):
+        """Generate Plotly charts driven by the analysis plan, plus EDA extras."""
+        numeric_cols = list(self.df.select_dtypes(include=[np.number]).columns)
+        session_id = self.session_state["session_id"]
+
+        # --- Goal-driven charts derived from the plan steps -------------------
+        for step in self.plan_steps:
+            operation = step.get("operation")
+            dim = step.get("dimension")
+            met = step.get("metric")
+            agg = step.get("aggregation", "mean")
+            if operation == "groupby" and dim and met:
+                if ("bar", dim, met) in self._viz_signatures:
+                    continue
+                fig = self._build_figure("bar", dim, met, agg)
+                if fig is not None:
+                    self._viz_signatures.add(("bar", dim, met))
+                    self._store_figure(fig, f"{agg.title()} {met} by {dim}", "bar_chart")
+            elif operation == "time_series" and met:
+                time_col = self._find_time_column()
+                if time_col and ("line", dim, met) not in self._viz_signatures:
+                    fig = self._build_figure("line", None, met, agg)
+                    if fig is not None:
+                        self._viz_signatures.add(("line", None, met))
+                        self._store_figure(fig, f"{met} over {time_col}", "line_chart")
+            elif operation == "statistical_test" and dim and met:
+                if ("box", dim, met) not in self._viz_signatures:
+                    fig = self._build_figure("box", dim, met)
+                    if fig is not None:
+                        self._viz_signatures.add(("box", dim, met))
+                        self._store_figure(fig, f"Distribution of {met} by {dim}", "box_plot")
+
+        # --- Correlation heatmap (always useful, deduped) ---------------------
+        if len(numeric_cols) >= 2 and ("heatmap", None, None) not in self._viz_signatures:
             corr_matrix = self.df[numeric_cols].corr()
-            figures.append((
-                px.imshow(corr_matrix, title="Correlation Matrix",
-                          color_continuous_scale="RdBu"),
-                "Correlation heatmap",
-                "heatmap",
-            ))
+            fig = px.imshow(corr_matrix, title="Correlation Matrix", color_continuous_scale="RdBu")
+            self._viz_signatures.add(("heatmap", None, None))
+            self._store_figure(fig, "Correlation heatmap", "heatmap")
 
-        for idx, (fig, description, operation) in enumerate(figures, start=1):
-            viz_id = f"viz_{idx}"
-            viz_path = os.path.join(viz_dir, f"{viz_id}.html")
-            fig.write_html(viz_path)
-
-            # Ship the figure spec to the dashboard so it can render the real
-            # interactive chart (not just a placeholder).
-            figure_json = json.loads(fig.to_json())
-
-            self.execution_results.append({
-                "step_id": viz_id,
-                "description": description,
-                "tool": "plotly",
-                "operation": operation,
-                "status": "completed",
-                "result": {"visualization_path": viz_path, "figure": figure_json}
-            })
-
-            self.evidence_store.store_visualization(
-                session_id,
-                viz_id,
-                viz_path,
-                description,
-                figure_json,
-            )
+        # --- Generic EDA supplements -----------------------------------------
+        for col in numeric_cols[:2]:
+            if ("histogram", None, col) in self._viz_signatures:
+                continue
+            fig = px.histogram(self.df, x=col, title=f"Distribution of {col}")
+            self._viz_signatures.add(("histogram", None, col))
+            self._store_figure(fig, f"Histogram for {col}", "histogram")
     
     def _detect_anomalies(self):
         """Detect and flag anomalies in the data"""

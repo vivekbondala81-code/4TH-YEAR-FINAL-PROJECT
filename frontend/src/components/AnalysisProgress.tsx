@@ -18,16 +18,39 @@ export default function AnalysisProgress({ analysisPlan, hypotheses, websocketMe
     { name: 'Final Report', icon: '📝' }
   ]
 
-  // Determine step status based on WebSocket messages
-  const getStepStatus = (stepIndex: number) => {
-    const relevantMessages = websocketMessages.filter((m: any) => m.type === 'progress')
-    
-    if (relevantMessages.length > stepIndex) {
-      return 'completed'
-    } else if (relevantMessages.length === stepIndex && isConnected) {
-      return 'running'
+  // WebSocket progress messages carry the executed step id (e.g. "step_1",
+  // "visualization") and a status of "running"/"completed". The earlier phases
+  // (profiling, planning, hypotheses) happen over HTTP before the socket opens,
+  // so their status is derived from the data that becomes available.
+  const progressMessages = websocketMessages.filter((m: any) => m.type === 'progress')
+  const isStepDone = (id: string) =>
+    progressMessages.some((m: any) => m.step === id && m.status === 'completed')
+
+  const planReady = !!analysisPlan
+  const hypothesesReady = hypotheses.length > 0
+  const executionStarted = progressMessages.length > 0
+  const executionDone = isStepDone('visualization')
+
+  // Map each high-level phase to a status.
+  const getStepStatus = (stepIndex: number): 'completed' | 'running' | 'pending' => {
+    switch (stepIndex) {
+      case 0: // Dataset Profiling
+        return planReady ? 'completed' : 'running'
+      case 1: // Data Quality Analysis
+        return planReady ? 'completed' : 'pending'
+      case 2: // Analysis Planning
+        return planReady ? 'completed' : isConnected ? 'running' : 'pending'
+      case 3: // Hypothesis Generation
+        return hypothesesReady ? 'completed' : planReady ? 'running' : 'pending'
+      case 4: // Tool Execution
+        return executionDone ? 'completed' : executionStarted ? 'running' : 'pending'
+      case 5: // Verification
+        return executionDone ? 'running' : 'pending'
+      case 6: // Final Report
+        return 'pending'
+      default:
+        return 'pending'
     }
-    return 'pending'
   }
 
   return (

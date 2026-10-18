@@ -1,10 +1,11 @@
 from fastapi import FastAPI, UploadFile, File, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, HTMLResponse
 from fastapi.concurrency import run_in_threadpool
 from contextlib import asynccontextmanager
 import os
 import json
+import html
 import asyncio
 from typing import Dict, Any
 import uuid
@@ -51,6 +52,190 @@ app.add_middleware(
 # Create necessary directories
 os.makedirs("uploads", exist_ok=True)
 os.makedirs("analysis_results", exist_ok=True)
+
+
+def _render_report_html(report: Dict[str, Any]) -> str:
+    """Render a stored analysis report into a standalone, self-contained HTML file.
+
+    Charts are embedded as real interactive Plotly figures (loaded from the CDN)
+    using the same figure spec the dashboard renders, so the downloaded report is
+    a faithful, shareable copy of the on-screen analysis.
+    """
+    def esc(value: Any) -> str:
+        return html.escape("" if value is None else str(value))
+
+    def bullets(items, empty: str = "None") -> str:
+        items = [i for i in (items or []) if i not in (None, "")]
+        if not items:
+            return f'<p class="muted">{esc(empty)}</p>'
+        return "<ul>" + "".join(f"<li>{esc(i)}</li>" for i in items) + "</ul>"
+
+    goal = report.get("goal") or "Not specified"
+    overview = report.get("dataset_overview") or {}
+    quality = report.get("data_quality") or {}
+    confidence = report.get("confidence") or {}
+    verification = report.get("verification") or {}
+
+    # Split the goal-specific AI insights from the traceable evidence findings.
+    findings = report.get("key_findings") or []
+    ai_insights = [f.get("description") for f in findings if f.get("kind") == "insight"]
+    for extra in report.get("insights") or []:
+        if extra not in ai_insights:
+            ai_insights.append(extra)
+    evidence_findings = [f.get("description") for f in findings if f.get("kind") != "insight"]
+
+    charts_html, chart_scripts = [], []
+    for idx, viz in enumerate(report.get("visualizations") or []):
+        figure = viz.get("figure") or {}
+        desc = esc(viz.get("description") or f"Chart {idx + 1}")
+        if figure.get("data"):
+            div_id = f"chart_{idx}"
+            charts_html.append(
+                f'<figure><figcaption>{desc}</figcaption>'
+                f'<div id="{div_id}" class="chart"></div></figure>'
+            )
+            payload = json.dumps({
+                "data": figure.get("data"),
+                "layout": figure.get("layout") or {},
+            }).replace("</", "<\\/")
+            chart_scripts.append(
+                f'Plotly.newPlot("{div_id}", {payload}.data, {payload}.layout, '
+                f'{{responsive: true, displayModeBar: false}});'
+            )
+        else:
+            charts_html.append(
+                f'<figure><figcaption>{desc}</figcaption>'
+                f'<p class="muted">Chart file: {esc(viz.get("path"))}</p></figure>'
+            )
+
+    hypotheses_html = "".join(
+        f'<div class="card sub"><p class="h-id">{esc(h.get("id"))}</p>'
+        f'<p>{esc(h.get("statement"))}</p>'
+        f'<span class="tag">{esc(h.get("type"))}</span></div>'
+        for h in (report.get("hypotheses") or [])
+    ) or '<p class="muted">None</p>'
+
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Analysis Report - {esc(overview.get("filename", "Dataset"))}</title>
+<script src="https://cdn.plot.ly/plotly-2.26.0.min.js"></script>
+<style>
+  :root {{ color-scheme: light; }}
+  * {{ box-sizing: border-box; }}
+  body {{ font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+         margin: 0; padding: 32px 16px; background: #f4f6fb; color: #1f2937; line-height: 1.55; }}
+  .wrap {{ max-width: 960px; margin: 0 auto; }}
+  header {{ background: linear-gradient(135deg, #4f46e5, #9333ea); color: #fff;
+            padding: 28px 32px; border-radius: 16px; margin-bottom: 24px; }}
+  header h1 {{ margin: 0 0 8px; font-size: 26px; }}
+  header p {{ margin: 0; opacity: .9; }}
+  .card {{ background: #fff; border-radius: 14px; padding: 22px 26px; margin-bottom: 20px;
+           box-shadow: 0 1px 3px rgba(16,24,40,.08); }}
+  .card.sub {{ padding: 14px 16px; margin: 10px 0; background: #f8faff; border-left: 4px solid #6366f1; }}
+  h2 {{ font-size: 18px; margin: 0 0 14px; color: #312e81; }}
+  h3 {{ font-size: 15px; margin: 18px 0 8px; color: #4338ca; }}
+  p {{ margin: 0 0 10px; }}
+  ul {{ margin: 0; padding-left: 20px; }}
+  li {{ margin-bottom: 6px; }}
+  .muted {{ color: #6b7280; font-size: 14px; }}
+  .goal {{ background: #eef2ff; border-left: 4px solid #4f46e5; padding: 12px 16px;
+           border-radius: 8px; font-weight: 500; }}
+  .grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }}
+  .stat {{ background: #f8faff; border-radius: 10px; padding: 12px 14px; }}
+  .stat .k {{ font-size: 12px; color: #6b7280; text-transform: uppercase; letter-spacing: .04em; }}
+  .stat .v {{ font-size: 18px; font-weight: 600; color: #111827; }}
+  .tag {{ display: inline-block; background: #e0e7ff; color: #3730a3; font-size: 12px;
+          padding: 2px 10px; border-radius: 999px; }}
+  .h-id {{ font-weight: 700; color: #3730a3; margin: 0 0 4px; }}
+  .bar {{ height: 10px; background: #e5e7eb; border-radius: 999px; overflow: hidden; margin: 6px 0 4px; }}
+  .bar > span {{ display: block; height: 100%; background: linear-gradient(90deg, #34d399, #059669); }}
+  figure {{ margin: 0 0 22px; }}
+  figcaption {{ font-weight: 600; color: #374151; margin-bottom: 8px; }}
+  .chart {{ width: 100%; height: 380px; }}
+  .two {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; }}
+  footer {{ text-align: center; color: #9ca3af; font-size: 12px; margin-top: 24px; }}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Autonomous Data Analyst &mdash; Final Report</h1>
+    <p>{esc(overview.get("filename", "Dataset"))} &middot; generated {esc(report.get("generated_at"))}</p>
+  </header>
+
+  <div class="card">
+    <h2>Analysis Goal</h2>
+    <p class="goal">{esc(goal)}</p>
+  </div>
+
+  <div class="card">
+    <h2>Executive Summary</h2>
+    <p>{esc(report.get("executive_summary"))}</p>
+  </div>
+
+  <div class="card">
+    <h2>Dataset Overview</h2>
+    <div class="grid">
+      <div class="stat"><div class="k">Rows</div><div class="v">{esc(overview.get("rows"))}</div></div>
+      <div class="stat"><div class="k">Columns</div><div class="v">{esc(overview.get("columns"))}</div></div>
+      <div class="stat"><div class="k">Numeric</div><div class="v">{esc(len(overview.get("numeric_columns") or []))}</div></div>
+      <div class="stat"><div class="k">Categorical</div><div class="v">{esc(len(overview.get("categorical_columns") or []))}</div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Data Quality</h2>
+    <p>Overall Score: <strong>{esc(quality.get("overall_score", 0))}%</strong></p>
+    <div class="bar"><span style="width:{esc(quality.get("overall_score", 0))}%"></span></div>
+  </div>
+
+  <div class="card">
+    <h2>Key Findings</h2>
+    <h3>AI Insights (goal-specific)</h3>
+    {bullets(ai_insights, "No AI insights available")}
+    <h3>Evidence-backed Findings</h3>
+    {bullets(evidence_findings, "No evidence-backed findings")}
+  </div>
+
+  <div class="card">
+    <h2>Hypotheses</h2>
+    {hypotheses_html}
+  </div>
+
+  <div class="card">
+    <h2>Visualizations</h2>
+    {"".join(charts_html) or '<p class="muted">No visualizations available.</p>'}
+  </div>
+
+  <div class="card two">
+    <div>
+      <h2>Verification</h2>
+      <p>Verified: <strong>{esc("Yes" if verification.get("verified") else "No")}</strong></p>
+      <p>Confidence: <strong>{esc(round(float(confidence.get("overall_confidence", 0)) * 100))}%</strong>
+         ({esc(confidence.get("confidence_level"))})</p>
+    </div>
+    <div>
+      <h2>Limitations</h2>
+      {bullets(report.get("limitations"))}
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Recommendations</h2>
+    {bullets(report.get("recommendations"))}
+  </div>
+
+  <footer>Generated by Autonomous Data Analyst</footer>
+</div>
+<script>
+{chr(10).join(chart_scripts)}
+</script>
+</body>
+</html>"""
+
 
 @app.get("/")
 async def root():
@@ -262,6 +447,36 @@ async def generate_report(request: Dict[str, Any]):
             status_code=500,
             content={"error": str(e)}
         )
+
+@app.get("/report/{session_id}/download")
+async def download_report(session_id: str, format: str = "html"):
+    """Download the generated report as a standalone HTML file (or raw JSON)."""
+    session_state = analysis_memory.get_session(session_id)
+    report = (session_state or {}).get("final_report")
+
+    if not report:
+        return JSONResponse(
+            status_code=404,
+            content={"error": "Report not found. Generate the report first."}
+        )
+
+    short_id = session_id[:8]
+
+    if format == "json":
+        return JSONResponse(
+            content=report,
+            headers={
+                "Content-Disposition": f'attachment; filename="analysis_report_{short_id}.json"'
+            },
+        )
+
+    return HTMLResponse(
+        content=_render_report_html(report),
+        headers={
+            "Content-Disposition": f'attachment; filename="analysis_report_{short_id}.html"'
+        },
+    )
+
 
 @app.get("/session/{session_id}")
 async def get_session(session_id: str):

@@ -20,12 +20,14 @@ class ReportGenerator:
         self.report = {
             "session_id": session_id,
             "generated_at": datetime.now().isoformat(),
+            "goal": self.session_state.get("goal", ""),
             "executive_summary": self._generate_executive_summary(),
             "dataset_overview": self._generate_dataset_overview(),
             "data_quality": self._generate_data_quality_section(),
             "analysis_plan": self.session_state.get("analysis_plan"),
             "hypotheses": self._generate_hypotheses_section(),
             "key_findings": self._generate_key_findings(),
+            "insights": (self.llm_insights or {}).get("insights", []),
             "visualizations": self._generate_visualizations_section(),
             "evidence": self._generate_evidence_section(),
             "verification": self._generate_verification_section(),
@@ -94,41 +96,38 @@ class ReportGenerator:
         return hypotheses
     
     def _generate_key_findings(self) -> List[Dict[str, Any]]:
-        """Generate key findings from execution results with LLM interpretation"""
+        """Generate key findings, leading with the goal-specific AI insights."""
         execution_results = self.session_state.get("execution_results", [])
         findings = []
-        
-        # Basic findings from execution results
-        for result in execution_results:
-            if result.get("status") == "completed":
-                finding = {
-                    "source": result.get("step_id"),
-                    "description": result.get("description"),
-                    "result": result.get("result")
-                }
-                findings.append(finding)
-        
-        # Use LLM to interpret results if available
+
+        # Ask the LLM first so its goal-specific conclusions lead the report.
         if self.use_llm and self.llm_service:
             try:
                 goal = self.session_state.get("goal", "")
                 interpretation = self.llm_service.interpret_results(execution_results, goal)
-                
-                # Add LLM-generated insights
-                if interpretation.get("key_findings"):
-                    for finding in interpretation["key_findings"]:
-                        findings.append({
-                            "source": "LLM_Interpretation",
-                            "description": finding,
-                            "result": None
-                        })
-                
-                # Store LLM insights for later use
                 self.llm_insights = interpretation
+
+                for insight in interpretation.get("key_findings", []):
+                    findings.append({
+                        "source": "AI Insight",
+                        "kind": "insight",
+                        "description": insight,
+                        "result": None
+                    })
             except Exception as e:
                 print(f"LLM interpretation failed: {e}")
                 self.llm_insights = None
-        
+
+        # Then the traceable evidence-backed findings.
+        for result in execution_results:
+            if result.get("status") == "completed":
+                findings.append({
+                    "source": result.get("step_id"),
+                    "kind": "evidence",
+                    "description": result.get("description"),
+                    "result": result.get("result")
+                })
+
         return findings
     
     def _generate_visualizations_section(self) -> List[Dict[str, Any]]:

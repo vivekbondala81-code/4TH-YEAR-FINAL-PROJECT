@@ -1,5 +1,7 @@
 'use client'
 
+const API_BASE = 'http://localhost:8000'
+
 interface ReportViewProps {
   report: any
 }
@@ -7,14 +9,50 @@ interface ReportViewProps {
 export default function ReportView({ report }: ReportViewProps) {
   if (!report) return null
 
+  const sessionId = report.session_id
+  const downloadUrl = sessionId ? `${API_BASE}/report/${sessionId}/download` : ''
+  const insights: string[] = report.insights || []
+  const keyFindings: any[] = report.key_findings || []
+
   return (
     <div className="glass-card p-6 animate-fade-in">
-      <h2 className="text-2xl font-bold text-gray-800 mb-6 flex items-center gap-2">
-        <span className="text-3xl">📝</span>
-        Final Analytical Report
-      </h2>
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+        <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
+          <span className="text-3xl">📝</span>
+          Final Analytical Report
+        </h2>
+        {downloadUrl && (
+          <div className="flex items-center gap-2">
+            <a
+              href={downloadUrl}
+              download
+              className="bg-gradient-to-r from-blue-500 to-purple-500 text-white px-5 py-2 rounded-lg hover:opacity-90 transition shadow-lg text-sm font-medium"
+            >
+              ⬇ Download Report (HTML)
+            </a>
+            <a
+              href={`${downloadUrl}?format=json`}
+              download
+              className="bg-white text-gray-700 border border-gray-300 px-4 py-2 rounded-lg hover:bg-gray-50 transition text-sm font-medium"
+            >
+              JSON
+            </a>
+          </div>
+        )}
+      </div>
       
       <div className="space-y-6">
+        {/* Analysis Goal */}
+        {report.goal && (
+          <div className="bg-indigo-50 border-l-4 border-indigo-500 p-6 rounded-xl">
+            <h3 className="text-lg font-semibold mb-2 text-gray-700 flex items-center gap-2">
+              <span>🎯</span>
+              Analysis Goal
+            </h3>
+            <p className="text-gray-800 font-medium whitespace-pre-line">{report.goal}</p>
+          </div>
+        )}
+
         {/* Executive Summary */}
         <div className="bg-gradient-to-br from-blue-50 to-purple-50 p-6 rounded-xl">
           <h3 className="text-lg font-semibold mb-3 text-gray-700 flex items-center gap-2">
@@ -23,6 +61,24 @@ export default function ReportView({ report }: ReportViewProps) {
           </h3>
           <p className="text-gray-700 whitespace-pre-line">{report.executive_summary}</p>
         </div>
+
+        {/* AI Insights (goal-specific) */}
+        {insights.length > 0 && (
+          <div className="bg-gradient-to-br from-purple-50 to-pink-50 p-6 rounded-xl border-l-4 border-purple-500">
+            <h3 className="text-lg font-semibold mb-4 text-gray-700 flex items-center gap-2">
+              <span>🤖</span>
+              AI Insights
+            </h3>
+            <ul className="space-y-3">
+              {insights.map((insight: string, i: number) => (
+                <li key={i} className="flex gap-3 text-gray-800">
+                  <span className="text-purple-500 font-bold">{i + 1}.</span>
+                  <span className="break-words">{insight}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         {/* Dataset Overview */}
         <div className="bg-white p-6 rounded-xl shadow-sm">
@@ -81,9 +137,30 @@ export default function ReportView({ report }: ReportViewProps) {
             Key Findings
           </h3>
           <div className="space-y-3">
-            {report.key_findings?.map((finding: any, i: number) => (
-              <div key={i} className="bg-gradient-to-r from-green-50 to-emerald-50 p-4 rounded-lg border-l-4 border-green-500">
-                <p className="font-medium text-gray-800">{finding.description}</p>
+            {keyFindings.map((finding: any, i: number) => (
+              <div
+                key={i}
+                className={`p-4 rounded-lg border-l-4 ${
+                  finding.kind === 'insight'
+                    ? 'bg-gradient-to-r from-purple-50 to-pink-50 border-purple-500'
+                    : 'bg-gradient-to-r from-green-50 to-emerald-50 border-green-500'
+                }`}
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <span
+                    className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+                      finding.kind === 'insight'
+                        ? 'bg-purple-100 text-purple-800'
+                        : 'bg-green-100 text-green-800'
+                    }`}
+                  >
+                    {finding.kind === 'insight' ? 'AI Insight' : 'Evidence'}
+                  </span>
+                  {finding.kind !== 'insight' && finding.source && (
+                    <span className="text-xs text-gray-500">{finding.source}</span>
+                  )}
+                </div>
+                <p className="font-medium text-gray-800 break-words">{finding.description}</p>
               </div>
             ))}
           </div>

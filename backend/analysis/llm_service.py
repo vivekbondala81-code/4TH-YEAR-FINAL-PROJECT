@@ -3,6 +3,7 @@ warnings.filterwarnings('ignore')
 
 from typing import Dict, Any, List, Optional
 import json
+import re
 from config import get_gemini_api_keys
 
 try:
@@ -118,40 +119,126 @@ class LLMService:
     def generate_analysis_plan(self, goal: str, dataset_info: Dict[str, Any]) -> Dict[str, Any]:
         """Generate analysis plan using LLM"""
         if not self.model:
-            return self._fallback_plan(goal, dataset_info)
+            return self._normalize_plan(self._fallback_plan(goal, dataset_info), dataset_info, goal)
 
         prompt = f"""
-You are an expert data analyst. Generate a detailed analysis plan for the following goal:
+You are an expert data analyst. Generate a detailed analysis plan that directly
+answers the user's goal using THIS dataset.
 
 GOAL: {goal}
 
 DATASET INFORMATION:
 - Rows: {dataset_info.get('rows', 0)}
 - Columns: {dataset_info.get('columns', 0)}
-- Column Names: {', '.join(dataset_info.get('column_names', []))}
+- All Columns: {', '.join(dataset_info.get('column_names', []))}
 - Numeric Columns: {', '.join(dataset_info.get('numeric_columns', []))}
 - Categorical Columns: {', '.join(dataset_info.get('categorical_columns', []))}
 
-Generate a JSON object with:
-1. main_goal: The refined understanding of the goal
-2. questions: Array of specific questions to answer (each with id, question, focus)
-3. steps: Array of executable steps (each with id, description, tool, operation)
-4. verification_tasks: Array of verification methods (each with id, description, method)
+Return a JSON object with:
+1. main_goal: refined understanding of the goal
+2. questions: array of specific questions (each with id, question, focus)
+3. steps: array of executable steps
+4. verification_tasks: array of verification methods (each with id, description, method)
 
-Tools available: python/pandas, python/scipy, python/sklearn, sql, visualization
-Operations: describe, groupby, correlation, time_series, outlier_detection, statistical_test
-For groupby steps also include a "dimension" field naming the categorical column to group by.
+EVERY step must be a JSON object with these keys:
+- id: "step_1", "step_2", ...
+- description: what is computed AND why it answers the goal
+- tool: one of "python/pandas", "python/scipy", "python/sklearn", "visualization"
+- operation: one of "describe", "groupby", "correlation", "time_series",
+  "outlier_detection", "statistical_test", "visualization"
+- dimension: EXACT categorical column name to group/split by (required for groupby,
+  statistical_test and visualization steps)
+- metric: EXACT numeric column name to measure (required for groupby, time_series,
+  visualization and statistical_test steps)
+- aggregation: "sum", "mean" or "count" (for groupby steps)
+- chart_type: "bar", "line", "box", "scatter" or "histogram" (for visualization steps)
+
+Rules:
+- Use ONLY column names exactly as listed above. Never invent column names.
+- Prefer the columns the goal mentions (e.g. a "sales" goal should use the Sales metric).
+- Include at least one groupby step comparing the key metric across the most relevant
+  categorical dimension, one correlation or statistical_test step, and one visualization
+  step that charts the key metric.
+- 5 to 7 steps total.
 
 Return ONLY valid JSON.
 """
         try:
             plan = self._parse_json(self._generate(prompt, json_mode=True))
             if isinstance(plan, dict) and plan.get("steps"):
-                return plan
+                return self._normalize_plan(plan, dataset_info, goal)
             print("LLM returned empty/invalid plan, falling back to rule-based.")
         except Exception as e:
             print(f"LLM Error: {e}")
-        return self._fallback_plan(goal, dataset_info)
+        return self._normalize_plan(self._fallback_plan(goal, dataset_info), dataset_info, goal)
+
+    @staticmethod
+    def _best_column(goal: str, candidates: List[str]) -> Optional[str]:
+        """Pick the candidate column most relevant to the goal text."""
+        if not candidates:
+            return None
+        goal_tokens = [t for t in re.split(r"[^a-z0-9]+", goal.lower()) if len(t) > 2]
+        for col in candidates:
+            col_tokens = set(re.split(r"[^a-z0-9]+", col.lower()))
+            for token in goal_tokens:
+                if token in col_tokens or any(token in c or c in token for c in col_tokens if len(c) > 2):
+                    return col
+        return candidates[0]
+
+    def _normalize_plan(self, plan: Dict[str, Any], dataset_info: Dict[str, Any], goal: str) -> Dict[str, Any]:
+        """Validate/repair the LLM plan so every step maps to real dataset columns.
+
+        This is what makes the executed analysis goal-specific: each groupby /
+        visualization step is guaranteed to carry a concrete dimension and metric
+        taken from the actual dataset.
+        """
+        columns = list(dataset_info.get("column_names", []))
+        numeric = list(dataset_info.get("numeric_columns", []))
+        categorical = list(dataset_info.get("categorical_columns", []))
+        if not numeric:
+            numeric = [c for c in columns if c.lower() not in {x.lower() for x in categorical}]
+        if not columns:
+            return plan
+
+        default_dim = self._best_column(goal, categorical) or (categorical[0] if categorical else columns[0])
+        default_metric = self._best_column(goal, numeric) or (numeric[0] if numeric else None)
+
+        valid_ops = {
+            "describe", "groupby", "correlation", "time_series",
+            "outlier_detection", "statistical_test", "visualization",
+        }
+        valid_tools = {"python/pandas", "python/scipy", "python/sklearn", "visualization"}
+
+        for step in plan.get("steps", []):
+            operation = (step.get("operation") or "").strip()
+            if operation not in valid_ops:
+                operation = "describe"
+            step["operation"] = operation
+
+            if step.get("tool") not in valid_tools:
+                step["tool"] = "python/pandas"
+
+            dimension = step.get("dimension")
+            metric = step.get("metric")
+            if dimension not in columns:
+                dimension = None
+            if metric not in columns:
+                metric = None
+
+            if operation in ("groupby", "statistical_test"):
+                step["dimension"] = dimension or default_dim
+                step["metric"] = metric or default_metric
+            elif operation in ("time_series", "visualization"):
+                step["metric"] = metric or default_metric
+                if operation == "visualization":
+                    step["dimension"] = dimension or default_dim
+                    step["chart_type"] = step.get("chart_type") or "bar"
+            elif dimension:
+                step["dimension"] = dimension
+            if metric:
+                step["metric"] = metric
+
+        return plan
 
     def generate_hypotheses(self, goal: str, analysis_plan: Dict[str, Any], dataset_info: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Generate hypotheses using LLM"""
@@ -298,17 +385,74 @@ Return ONLY valid JSON array.
     # Rule-based fallbacks (used when the API is unavailable)
     # ------------------------------------------------------------------
     def _fallback_plan(self, goal: str, dataset_info: Dict[str, Any]) -> Dict[str, Any]:
-        """Fallback rule-based planning"""
+        """Fallback rule-based planning (still goal-aware via column matching)."""
+        numeric = list(dataset_info.get("numeric_columns", []))
+        categorical = list(dataset_info.get("categorical_columns", []))
+        metric = self._best_column(goal, numeric) or (numeric[0] if numeric else None)
+        dimension = self._best_column(goal, categorical) or (categorical[0] if categorical else None)
+
+        steps: List[Dict[str, Any]] = []
+        if metric:
+            steps.append({
+                "id": "step_1",
+                "description": f"Profile the distribution of {metric}",
+                "tool": "python/pandas",
+                "operation": "describe",
+                "metric": metric,
+            })
+        if dimension and metric:
+            steps.append({
+                "id": f"step_{len(steps) + 1}",
+                "description": f"Compare {metric} across each {dimension}",
+                "tool": "python/pandas",
+                "operation": "groupby",
+                "dimension": dimension,
+                "metric": metric,
+                "aggregation": "mean",
+            })
+            steps.append({
+                "id": f"step_{len(steps) + 1}",
+                "description": f"Test whether {metric} differs significantly across {dimension}",
+                "tool": "python/scipy",
+                "operation": "statistical_test",
+                "dimension": dimension,
+                "metric": metric,
+            })
+            steps.append({
+                "id": f"step_{len(steps) + 1}",
+                "description": f"Chart {metric} by {dimension}",
+                "tool": "visualization",
+                "operation": "visualization",
+                "dimension": dimension,
+                "metric": metric,
+                "chart_type": "bar",
+            })
+        if len(numeric) > 1:
+            steps.append({
+                "id": f"step_{len(steps) + 1}",
+                "description": "Check correlations between numeric variables",
+                "tool": "python/scipy",
+                "operation": "correlation",
+            })
+        steps.append({
+            "id": f"step_{len(steps) + 1}",
+            "description": "Detect outliers across numeric columns",
+            "tool": "python/scipy",
+            "operation": "outlier_detection",
+        })
+
+        if not steps:
+            steps = [
+                {"id": "step_1", "description": "Calculate descriptive statistics", "tool": "python/pandas", "operation": "describe"},
+            ]
+
         return {
             "main_goal": goal,
             "questions": [
-                {"id": "q1", "question": "What are the overall patterns in the data?", "focus": ["all columns"]},
-                {"id": "q2", "question": "Are there significant differences across dimensions?", "focus": dataset_info.get("categorical_columns", [])}
+                {"id": "q1", "question": f"What patterns in the data explain: {goal}?", "focus": numeric or ["all columns"]},
+                {"id": "q2", "question": f"How does the key metric vary across {dimension}?" if dimension else "Are there significant differences across dimensions?", "focus": [dimension] if dimension else categorical},
             ],
-            "steps": [
-                {"id": "step1", "description": "Calculate descriptive statistics", "tool": "python/pandas", "operation": "describe"},
-                {"id": "step2", "description": "Detect outliers", "tool": "python/scipy", "operation": "outlier_detection"}
-            ],
+            "steps": steps,
             "verification_tasks": [
                 {"id": "v1", "description": "Cross-check calculations", "method": "dual_calculation"}
             ]
