@@ -19,6 +19,9 @@ An AI-powered autonomous data analysis system that performs hypothesis-driven in
 - **Advanced Filtering**: Filter data using various operators (equals, contains, greater than, etc.)
 - **Automatic Type Detection**: Smart conversion of string columns to numeric when appropriate
 - **Universal Data Support**: Works with numeric, categorical, and mixed datasets
+- **Multi-Format Report Downloads**: Download reports as HTML, PowerPoint (PPTX), or JSON
+- **Audience-Specific Reports**: Generate simplified reports for non-technical users or detailed reports for analysts
+- **Plain Language Explanations**: Technical terms automatically simplified for general audience
 
 ## Architecture
 
@@ -120,6 +123,12 @@ The application will be available at:
 
 5. **Review Results**: Explore the analysis plan, hypotheses, evidence, visualizations, and final report
 
+6. **Download Reports**: Choose your preferred format:
+   - **HTML**: Interactive report with charts (best for web viewing)
+   - **PPTX**: PowerPoint presentation (best for presentations)
+   - **JSON**: Raw data (best for developers)
+   - **Audience Toggle**: Switch between "General" (simplified language) and "Technical" (detailed analysis)
+
 ## Sample Dataset
 
 A sample sales dataset is provided in `sample-data/sales.csv` for testing.
@@ -132,7 +141,7 @@ A sample sales dataset is provided in `sample-data/sales.csv` for testing.
 - `POST /verify` - Verify analysis results
 - `POST /report` - Generate final report
 - `GET /session/{session_id}` - Get session state
-- `GET /report/{session_id}/download` - Download report (HTML or JSON)
+- `GET /report/{session_id}/download` - Download report (HTML, PPTX, or JSON; supports audience parameter for general/technical)
 - `POST /export` - Export dataset in CSV, Excel, or JSON format
 - `POST /compare` - Compare different dimensions in the dataset
 - `POST /filter` - Filter dataset based on criteria
