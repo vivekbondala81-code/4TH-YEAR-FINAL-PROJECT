@@ -1,5 +1,7 @@
 'use client'
 
+import { useState } from 'react'
+
 const API_BASE = 'http://localhost:8000'
 
 interface ReportViewProps {
@@ -13,6 +15,47 @@ export default function ReportView({ report }: ReportViewProps) {
   const downloadUrl = sessionId ? `${API_BASE}/report/${sessionId}/download` : ''
   const insights: string[] = report.insights || []
   const keyFindings: any[] = report.key_findings || []
+  const [audience, setAudience] = useState<'general' | 'technical'>('general')
+  const [format, setFormat] = useState<'html' | 'pdf' | 'pptx' | 'json'>('html')
+
+  const getDownloadUrl = (fmt: string, aud: string) => {
+    return `${downloadUrl}?format=${fmt}&audience=${aud}`
+  }
+
+  const handleDownload = (fmt: string) => {
+    const url = getDownloadUrl(fmt, audience)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `analysis_report_${sessionId?.substring(0, 8)}.${fmt}`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+  }
+
+  const simplifyText = (text: string): string => {
+    if (audience !== 'general') return text
+
+    const replacements: Record<string, string> = {
+      'statistical significance': 'meaningful difference',
+      'p-value': 'probability',
+      'correlation': 'relationship',
+      'outlier': 'unusual value',
+      'variance': 'difference',
+      'aggregation': 'summary',
+      'hypothesis': 'idea to test',
+      'dimension': 'category',
+      'metric': 'measurement',
+      'standard deviation': 'spread',
+      'median': 'middle value',
+      'percentile': 'ranking',
+    }
+
+    let simplified = text
+    Object.entries(replacements).forEach(([tech, simple]) => {
+      simplified = simplified.replace(new RegExp(tech, 'gi'), simple)
+    })
+    return simplified
+  }
 
   return (
     <div className="glass-card p-6 animate-fade-in">
@@ -22,23 +65,63 @@ export default function ReportView({ report }: ReportViewProps) {
           Final Analytical Report
         </h2>
         {downloadUrl && (
-          <div className="flex items-center gap-2">
-            <a
-              href={downloadUrl}
-              download
-              className="bg-gradient-to-r from-blue-500 to-purple-500 text-white px-5 py-2 rounded-lg hover:opacity-90 transition shadow-lg text-sm font-medium"
-            >
-              ⬇ Download Report (HTML)
-            </a>
-            <a
-              href={`${downloadUrl}?format=json`}
-              download
-              className="bg-white text-gray-700 border border-gray-300 px-4 py-2 rounded-lg hover:bg-gray-50 transition text-sm font-medium"
-            >
-              JSON
-            </a>
+          <div className="flex flex-wrap items-center gap-3">
+            {/* Audience Selection */}
+            <div className="flex items-center gap-2 bg-white border border-gray-300 rounded-lg p-1">
+              <button
+                onClick={() => setAudience('general')}
+                className={`px-3 py-1.5 rounded-md text-sm font-medium transition ${
+                  audience === 'general'
+                    ? 'bg-blue-500 text-white'
+                    : 'text-gray-700 hover:bg-gray-100'
+                }`}
+              >
+                General
+              </button>
+              <button
+                onClick={() => setAudience('technical')}
+                className={`px-3 py-1.5 rounded-md text-sm font-medium transition ${
+                  audience === 'technical'
+                    ? 'bg-blue-500 text-white'
+                    : 'text-gray-700 hover:bg-gray-100'
+                }`}
+              >
+                Technical
+              </button>
+            </div>
+
+            {/* Format Selection */}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => handleDownload('html')}
+                className="bg-gradient-to-r from-blue-500 to-purple-500 text-white px-4 py-2 rounded-lg hover:opacity-90 transition shadow-lg text-sm font-medium"
+              >
+                ⬇ HTML
+              </button>
+              <button
+                onClick={() => handleDownload('pptx')}
+                className="bg-white text-gray-700 border border-gray-300 px-4 py-2 rounded-lg hover:bg-gray-50 transition text-sm font-medium"
+              >
+                ⬇ PPTX
+              </button>
+              <button
+                onClick={() => handleDownload('json')}
+                className="bg-white text-gray-700 border border-gray-300 px-4 py-2 rounded-lg hover:bg-gray-50 transition text-sm font-medium"
+              >
+                ⬇ JSON
+              </button>
+            </div>
           </div>
         )}
+      </div>
+
+      {/* Audience Indicator */}
+      <div className="mb-4 bg-blue-50 border border-blue-200 rounded-lg p-3">
+        <p className="text-sm text-blue-800">
+          <strong>Current View:</strong> {audience === 'general' ? 'General Audience (Non-Technical)' : 'Technical Report (Detailed)'}
+          {audience === 'general' && ' - Simplified language, focus on key takeaways'}
+          {audience === 'technical' && ' - Detailed analysis, technical terms preserved'}
+        </p>
       </div>
       
       <div className="space-y-6">
@@ -59,7 +142,23 @@ export default function ReportView({ report }: ReportViewProps) {
             <span>📌</span>
             Executive Summary
           </h3>
-          <p className="text-gray-700 whitespace-pre-line">{report.executive_summary}</p>
+          <div className="text-gray-700 whitespace-pre-line">
+            {audience === 'general' ? (
+              <div>
+                {report.executive_summary.split('\n').map((line: string, i: number) => {
+                  if (line.startsWith('##')) {
+                    return <h4 key={i} className="font-bold text-gray-800 mt-4 mb-2">{line.replace('##', '').trim()}</h4>
+                  }
+                  if (line.startsWith('•')) {
+                    return <p key={i} className="ml-4">{line}</p>
+                  }
+                  return <p key={i}>{line}</p>
+                })}
+              </div>
+            ) : (
+              <p>{report.executive_summary}</p>
+            )}
+          </div>
         </div>
 
         {/* AI Insights (goal-specific) */}
@@ -160,7 +259,9 @@ export default function ReportView({ report }: ReportViewProps) {
                     <span className="text-xs text-gray-500">{finding.source}</span>
                   )}
                 </div>
-                <p className="font-medium text-gray-800 break-words">{finding.description}</p>
+                <p className="font-medium text-gray-800 break-words">
+                  {audience === 'general' ? simplifyText(finding.description) : finding.description}
+                </p>
               </div>
             ))}
           </div>
@@ -170,13 +271,15 @@ export default function ReportView({ report }: ReportViewProps) {
         <div className="bg-white p-6 rounded-xl shadow-sm">
           <h3 className="text-lg font-semibold mb-4 text-gray-700 flex items-center gap-2">
             <span>💡</span>
-            Hypotheses
+            {audience === 'general' ? 'Key Ideas Tested' : 'Hypotheses'}
           </h3>
           <div className="space-y-3">
             {report.hypotheses?.map((h: any) => (
               <div key={h.id} className="bg-blue-50 p-4 rounded-lg">
                 <p className="font-semibold text-blue-800">{h.id}</p>
-                <p className="text-gray-700">{h.statement}</p>
+                <p className="text-gray-700">
+                  {audience === 'general' ? simplifyText(h.statement) : h.statement}
+                </p>
                 <p className="text-sm text-gray-500 mt-1">Status: {h.status}</p>
               </div>
             ))}
@@ -211,11 +314,11 @@ export default function ReportView({ report }: ReportViewProps) {
         <div className="bg-white p-6 rounded-xl shadow-sm">
           <h3 className="text-lg font-semibold mb-4 text-gray-700 flex items-center gap-2">
             <span>⚠️</span>
-            Limitations
+            {audience === 'general' ? 'Things to Keep in Mind' : 'Limitations'}
           </h3>
           <ul className="list-disc list-inside space-y-2 text-gray-700">
             {report.limitations?.map((limit: string, i: number) => (
-              <li key={i}>{limit}</li>
+              <li key={i}>{audience === 'general' ? simplifyText(limit) : limit}</li>
             ))}
           </ul>
         </div>
@@ -224,11 +327,11 @@ export default function ReportView({ report }: ReportViewProps) {
         <div className="bg-gradient-to-br from-purple-50 to-pink-50 p-6 rounded-xl">
           <h3 className="text-lg font-semibold mb-4 text-gray-700 flex items-center gap-2">
             <span>💡</span>
-            Recommendations
+            {audience === 'general' ? 'What You Should Do' : 'Recommendations'}
           </h3>
           <ul className="list-disc list-inside space-y-2 text-gray-700">
             {report.recommendations?.map((rec: string, i: number) => (
-              <li key={i}>{rec}</li>
+              <li key={i}>{audience === 'general' ? simplifyText(rec) : rec}</li>
             ))}
           </ul>
         </div>

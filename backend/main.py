@@ -55,12 +55,14 @@ os.makedirs("analysis_results", exist_ok=True)
 os.makedirs("exports", exist_ok=True)
 
 
-def _render_report_html(report: Dict[str, Any]) -> str:
+def _render_report_html(report: Dict[str, Any], audience: str = "general") -> str:
     """Render a stored analysis report into a standalone, self-contained HTML file.
 
     Charts are embedded as real interactive Plotly figures (loaded from the CDN)
     using the same figure spec the dashboard renders, so the downloaded report is
     a faithful, shareable copy of the on-screen analysis.
+
+    audience: 'general' for non-technical users, 'technical' for detailed analysis
     """
     def esc(value: Any) -> str:
         return html.escape("" if value is None else str(value))
@@ -70,6 +72,31 @@ def _render_report_html(report: Dict[str, Any]) -> str:
         if not items:
             return f'<p class="muted">{esc(empty)}</p>'
         return "<ul>" + "".join(f"<li>{esc(i)}</li>" for i in items) + "</ul>"
+
+    def simplify_technical(text: str) -> str:
+        """Simplify technical language for general audience"""
+        if audience != "general":
+            return text
+
+        replacements = {
+            "statistical significance": "meaningful difference",
+            "p-value": "probability",
+            "correlation": "relationship",
+            "outlier": "unusual value",
+            "variance": "difference",
+            "aggregation": "summary",
+            "hypothesis": "idea to test",
+            "dimension": "category",
+            "metric": "measurement",
+            "standard deviation": "spread",
+            "median": "middle value",
+            "percentile": "ranking",
+        }
+
+        simplified = text
+        for tech, simple in replacements.items():
+            simplified = simplified.replace(tech, simple)
+        return simplified
 
     goal = report.get("goal") or "Not specified"
     overview = report.get("dataset_overview") or {}
@@ -84,6 +111,11 @@ def _render_report_html(report: Dict[str, Any]) -> str:
         if extra not in ai_insights:
             ai_insights.append(extra)
     evidence_findings = [f.get("description") for f in findings if f.get("kind") != "insight"]
+
+    # Simplify findings for general audience
+    if audience == "general":
+        ai_insights = [simplify_technical(insight) for insight in ai_insights]
+        evidence_findings = [simplify_technical(finding) for finding in evidence_findings]
 
     charts_html, chart_scripts = [], []
     for idx, viz in enumerate(report.get("visualizations") or []):
@@ -111,10 +143,27 @@ def _render_report_html(report: Dict[str, Any]) -> str:
 
     hypotheses_html = "".join(
         f'<div class="card sub"><p class="h-id">{esc(h.get("id"))}</p>'
-        f'<p>{esc(h.get("statement"))}</p>'
+        f'<p>{esc(simplify_technical(h.get("statement")) if audience == "general" else h.get("statement"))}</p>'
         f'<span class="tag">{esc(h.get("type"))}</span></div>'
         for h in (report.get("hypotheses") or [])
     ) or '<p class="muted">None</p>'
+
+    # Simplify recommendations for general audience
+    recommendations = report.get("recommendations", [])
+    if audience == "general":
+        recommendations = [simplify_technical(rec) for rec in recommendations]
+
+    # Simplify limitations for general audience
+    limitations = report.get("limitations", [])
+    if audience == "general":
+        limitations = [simplify_technical(lim) for lim in limitations]
+
+    # Executive summary simplification
+    exec_summary = report.get("executive_summary", "")
+    if audience == "general":
+        exec_summary = simplify_technical(exec_summary)
+
+    audience_label = "General Audience" if audience == "general" else "Technical Report"
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -133,6 +182,8 @@ def _render_report_html(report: Dict[str, Any]) -> str:
             padding: 28px 32px; border-radius: 16px; margin-bottom: 24px; }}
   header h1 {{ margin: 0 0 8px; font-size: 26px; }}
   header p {{ margin: 0; opacity: .9; }}
+  .audience-badge {{ background: rgba(255,255,255,0.2); padding: 4px 12px; border-radius: 20px;
+                     font-size: 12px; margin-top: 8px; display: inline-block; }}
   .card {{ background: #fff; border-radius: 14px; padding: 22px 26px; margin-bottom: 20px;
            box-shadow: 0 1px 3px rgba(16,24,40,.08); }}
   .card.sub {{ padding: 14px 16px; margin: 10px 0; background: #f8faff; border-left: 4px solid #6366f1; }}
@@ -158,6 +209,9 @@ def _render_report_html(report: Dict[str, Any]) -> str:
   .chart {{ width: 100%; height: 380px; }}
   .two {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; }}
   footer {{ text-align: center; color: #9ca3af; font-size: 12px; margin-top: 24px; }}
+  .key-takeaway {{ background: linear-gradient(135deg, #fef3c7, #fde68a); padding: 16px;
+                    border-radius: 8px; border-left: 4px solid #f59e0b; margin-bottom: 12px; }}
+  .key-takeaway strong {{ color: #92400e; }}
 </style>
 </head>
 <body>
@@ -165,6 +219,7 @@ def _render_report_html(report: Dict[str, Any]) -> str:
   <header>
     <h1>Autonomous Data Analyst &mdash; Final Report</h1>
     <p>{esc(overview.get("filename", "Dataset"))} &middot; generated {esc(report.get("generated_at"))}</p>
+    <div class="audience-badge">{esc(audience_label)}</div>
   </header>
 
   <div class="card">
@@ -174,7 +229,7 @@ def _render_report_html(report: Dict[str, Any]) -> str:
 
   <div class="card">
     <h2>Executive Summary</h2>
-    <p>{esc(report.get("executive_summary"))}</p>
+    <p>{esc(exec_summary)}</p>
   </div>
 
   <div class="card">
@@ -220,13 +275,13 @@ def _render_report_html(report: Dict[str, Any]) -> str:
     </div>
     <div>
       <h2>Limitations</h2>
-      {bullets(report.get("limitations"))}
+      {bullets(limitations)}
     </div>
   </div>
 
   <div class="card">
     <h2>Recommendations</h2>
-    {bullets(report.get("recommendations"))}
+    {bullets(recommendations)}
   </div>
 
   <footer>Generated by Autonomous Data Analyst</footer>
@@ -422,36 +477,48 @@ async def generate_report(request: Dict[str, Any]):
     """Generate final analytical report"""
     try:
         session_id = request.get("session_id")
-        
+
         if not session_id:
             return JSONResponse(
                 status_code=400,
                 content={"error": "session_id is required"}
             )
-        
+
         # Get complete analysis state
         session_state = analysis_memory.get_session(session_id)
-        
+
+        if not session_state or not session_state.get("session_id"):
+            return JSONResponse(
+                status_code=404,
+                content={"error": "Session not found. Please run analysis first."}
+            )
+
         # Generate report with LLM interpretation
         report_generator = ReportGenerator(session_state, evidence_store, use_llm=True)
         report = await run_in_threadpool(report_generator.generate)
-        
+
         # Store report
         analysis_memory.store_report(session_id, report)
-        
+
         return {
             "session_id": session_id,
             "report": report
         }
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return JSONResponse(
             status_code=500,
             content={"error": str(e)}
         )
 
 @app.get("/report/{session_id}/download")
-async def download_report(session_id: str, format: str = "html"):
-    """Download the generated report as a standalone HTML file (or raw JSON)."""
+async def download_report(session_id: str, format: str = "html", audience: str = "general"):
+    """Download the generated report in various formats and for different audiences.
+
+    Formats: html, json, pdf, pptx
+    Audiences: general (non-technical), technical (detailed)
+    """
     session_state = analysis_memory.get_session(session_id)
     report = (session_state or {}).get("final_report")
 
@@ -471,11 +538,132 @@ async def download_report(session_id: str, format: str = "html"):
             },
         )
 
-    return HTMLResponse(
-        content=_render_report_html(report),
-        headers={
-            "Content-Disposition": f'attachment; filename="analysis_report_{short_id}.html"'
-        },
+    if format == "html":
+        html_content = _render_report_html(report, audience=audience)
+        return HTMLResponse(
+            content=html_content,
+            headers={
+                "Content-Disposition": f'attachment; filename="analysis_report_{short_id}.html"'
+            },
+        )
+
+    if format == "pdf":
+        # PDF generation with weasyprint requires GTK libraries on Windows
+        # Return HTML with a note about printing to PDF
+        try:
+            from weasyprint import HTML
+            html_content = _render_report_html(report, audience=audience)
+            pdf_bytes = HTML(string=html_content).write_pdf()
+            from fastapi.responses import Response
+            return Response(
+                content=pdf_bytes,
+                media_type="application/pdf",
+                headers={
+                    "Content-Disposition": f'attachment; filename="analysis_report_{short_id}.pdf"'
+                }
+            )
+        except Exception as e:
+            # Fallback: return HTML with note
+            print(f"PDF generation failed: {e}")
+            html_content = _render_report_html(report, audience=audience)
+            html_content = html_content.replace(
+                '</body>',
+                '<div style="background: #fff3cd; color: #856404; padding: 20px; margin: 20px; border-radius: 8px; border: 1px solid #ffeeba;"><strong>Note:</strong> PDF generation requires additional system libraries. To save as PDF, open this HTML file in your browser and use "Print to PDF" or "Save as PDF". This will produce a high-quality PDF.</div></body>'
+            )
+            return HTMLResponse(
+                content=html_content,
+                headers={
+                    "Content-Disposition": f'attachment; filename="analysis_report_{short_id}.html"'
+                },
+            )
+
+    if format == "pptx":
+        try:
+            from pptx import Presentation
+            from pptx.util import Inches, Pt
+            from pptx.enum.text import PP_ALIGN
+
+            prs = Presentation()
+
+            # Title slide
+            title_slide = prs.slides.add_slide(prs.slide_layouts[0])
+            title = title_slide.shapes.title
+            subtitle = title_slide.placeholders[1]
+            title.text = "Data Analysis Report"
+            subtitle.text = f"Dataset: {report.get('dataset_overview', {}).get('filename', 'Unknown')}"
+
+            # Executive Summary
+            slide = prs.slides.add_slide(prs.slide_layouts[1])
+            slide.shapes.title.text = "Executive Summary"
+            content = slide.placeholders[1].text_frame
+            content.text = report.get('executive_summary', 'No summary available')
+
+            # Key Findings
+            slide = prs.slides.add_slide(prs.slide_layouts[1])
+            slide.shapes.title.text = "Key Findings"
+            content = slide.placeholders[1].text_frame
+            findings = report.get('key_findings', [])
+            for i, finding in enumerate(findings[:5]):
+                if i > 0:
+                    content.add_paragraph()
+                p = content.add_paragraph()
+                p.text = f"• {finding.get('description', str(finding))}"
+                p.level = 0
+
+            # Recommendations
+            slide = prs.slides.add_slide(prs.slide_layouts[1])
+            slide.shapes.title.text = "Recommendations"
+            content = slide.placeholders[1].text_frame
+            recommendations = report.get('recommendations', [])
+            for i, rec in enumerate(recommendations[:5]):
+                if i > 0:
+                    content.add_paragraph()
+                p = content.add_paragraph()
+                p.text = f"• {rec}"
+                p.level = 0
+
+            # Dataset Overview
+            slide = prs.slides.add_slide(prs.slide_layouts[1])
+            slide.shapes.title.text = "Dataset Overview"
+            content = slide.placeholders[1].text_frame
+            overview = report.get('dataset_overview', {})
+            p = content.add_paragraph()
+            p.text = f"Rows: {overview.get('rows', 'N/A')}"
+            p = content.add_paragraph()
+            p.text = f"Columns: {overview.get('columns', 'N/A')}"
+            p = content.add_paragraph()
+            p.text = f"Numeric Columns: {len(overview.get('numeric_columns', []))}"
+            p = content.add_paragraph()
+            p.text = f"Categorical Columns: {len(overview.get('categorical_columns', []))}"
+
+            # Save to bytes
+            from io import BytesIO
+            buffer = BytesIO()
+            prs.save(buffer)
+            buffer.seek(0)
+
+            from fastapi.responses import Response
+            return Response(
+                content=buffer.getvalue(),
+                media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                headers={
+                    "Content-Disposition": f'attachment; filename="analysis_report_{short_id}.pptx"'
+                }
+            )
+        except ImportError:
+            return JSONResponse(
+                status_code=500,
+                content={"error": "PowerPoint generation requires python-pptx. Install with: pip install python-pptx"}
+            )
+        except Exception as e:
+            return JSONResponse(
+                status_code=500,
+                content={"error": f"PowerPoint generation failed: {str(e)}"}
+            )
+
+    return JSONResponse(
+        status_code=400,
+        content={"error": f"Unsupported format: {format}. Use html, json, pdf, or pptx"}
     )
 
 
